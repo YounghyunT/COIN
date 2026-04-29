@@ -1,0 +1,238 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0b0f12;
+}
+
+button {
+  font: inherit;
+}
+
+code {
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.92);
+  padding: 2px 5px;
+  color: #bae6fd;
+  font-size: 0.8em;
+}
+
+.topbar {
+  display: flex;
+  min-height: 86px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar h1 {
+  margin-top: 6px;
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 0.95;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.panel,
+.metric-card {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #101418;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.26);
+}
+
+.panel {
+  padding: 18px;
+}
+
+.metric-card {
+  padding: 16px;
+}
+
+.chart-head {
+  display: flex;
+  min-height: 90px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e2e8f0;
+  font-weight: 650;
+}
+
+.connection,
+.decision,
+.signal-chip,
+.action-button,
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.connection {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 9px 12px;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.connection span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #64748b;
+}
+
+.connection.live {
+  color: #86efac;
+}
+
+.connection.live span {
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12);
+}
+
+.connection.demo {
+  color: #fbbf24;
+}
+
+.connection.demo span {
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.12);
+}
+
+.connection.offline {
+  color: #fda4af;
+}
+
+.connection.offline span {
+  background: #f43f5e;
+  box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.12);
+}
+
+.decision {
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.decision.buy,
+.signal-box.buy {
+  background: rgba(16, 185, 129, 0.12);
+  color: #86efac;
+}
+
+.decision.sell,
+.signal-box.sell {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fda4af;
+}
+
+.decision.wait,
+.signal-box.wait {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
+
+.signal-box {
+  margin-top: 16px;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.signal-chip {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0 12px;
+  color: #cbd5e1;
+}
+
+.action-button {
+  min-height: 42px;
+  border: 0;
+  padding: 0 14px;
+  color: white;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease;
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.action-button.buy {
+  background: #059669;
+}
+
+.action-button.sell {
+  background: #e11d48;
+}
+
+.action-button.neutral {
+  background: #2563eb;
+}
+
+.toggle {
+  width: 44px;
+  height: 30px;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.toggle.on {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.trade-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr 70px;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 12px;
+  font-size: 0.875rem;
+}
+
+.trade-row:last-child {
+  border-bottom: 0;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .topbar,
+  .chart-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trade-row {
+    grid-template-columns: 48px 1fr;
+  }
+}
