@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -21,15 +21,26 @@ import "./styles.css";
 const MARKET_SOURCES = [
   {
     name: "Binance Global",
-    rest: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=240",
-    ws: "wss://stream.binance.com:9443/ws/btcusdt@kline_1m",
+    restBase: "https://api.binance.com/api/v3/klines",
+    wsBase: "wss://stream.binance.com:9443/ws",
   },
   {
     name: "Binance US",
-    rest: "https://api.binance.us/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=240",
-    ws: "wss://stream.binance.us:9443/ws/btcusdt@kline_1m",
+    restBase: "https://api.binance.us/api/v3/klines",
+    wsBase: "wss://stream.binance.us:9443/ws",
   },
 ];
+
+const TIMEFRAMES = [
+  { label: "1분", value: "1m", caption: "최근 약 8일", stepMs: 60_000, maxRequests: 12 },
+  { label: "15분", value: "15m", caption: "최근 약 4개월", stepMs: 15 * 60_000, maxRequests: 12 },
+  { label: "1시간", value: "1h", caption: "최근 약 16개월", stepMs: 60 * 60_000, maxRequests: 12 },
+  { label: "4시간", value: "4h", caption: "2023년부터", stepMs: 4 * 60 * 60_000, maxRequests: 12 },
+  { label: "1일", value: "1d", caption: "2023년부터", stepMs: 24 * 60 * 60_000, maxRequests: 4 },
+];
+
+const LONG_HISTORY_START = Date.UTC(2023, 0, 1);
+const BINANCE_LIMIT = 1000;
 
 const formatUsd = (value, digits = 2) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -163,7 +174,39 @@ function buildSignal(candles, indicators) {
   return { side: "WAIT", label: "중립 대기", score, reason: reasons.join(", ") };
 }
 
-function useMarketData() {
+function buildRestUrl(source, interval, startTime) {
+  const url = new URL(source.restBase);
+  url.searchParams.set("symbol", "BTCUSDT");
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("limit", String(BINANCE_LIMIT));
+  if (startTime) url.searchParams.set("startTime", String(startTime));
+  return url.toString();
+}
+
+async function fetchHistoricalCandles(source, timeframe) {
+  const rows = [];
+  let startTime = LONG_HISTORY_START;
+
+  for (let requestIndex = 0; requestIndex < timeframe.maxRequests; requestIndex += 1) {
+    const response = await fetch(buildRestUrl(source, timeframe.value, startTime));
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+    const batch = await response.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    rows.push(...batch);
+    const lastOpenTime = batch.at(-1)?.[0];
+    if (!lastOpenTime || batch.length < BINANCE_LIMIT) break;
+
+    startTime = lastOpenTime + timeframe.stepMs;
+    if (startTime > Date.now()) break;
+  }
+
+  return rows;
+}
+
+function useMarketData(interval) {
+  const timeframe = useMemo(() => TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1), [interval]);
   const [candles, setCandles] = useState([]);
   const [status, setStatus] = useState({
     mode: "connecting",
@@ -175,6 +218,7 @@ function useMarketData() {
     let socket;
     let demoTimer;
     let cancelled = false;
+    const stepSeconds = timeframe.stepMs / 1000;
 
     function parseKlines(rows) {
       return rows.map((row) => ({
@@ -189,7 +233,7 @@ function useMarketData() {
 
     function pushCandle(candle) {
       setCandles((current) => {
-        const next = current.slice(-239);
+        const next = current.slice(-11999);
         const last = next.at(-1);
         if (last?.time === candle.time) {
           next[next.length - 1] = candle;
@@ -200,14 +244,14 @@ function useMarketData() {
     }
 
     function startDemoMode() {
-      const now = Math.floor(Date.now() / 60000) * 60;
+      const now = Math.floor(Date.now() / timeframe.stepMs) * stepSeconds;
       let price = 95000;
       const seed = Array.from({ length: 180 }, (_, index) => {
         const open = price;
         const drift = (Math.sin(index / 8) + Math.random() - 0.45) * 140;
         price = Math.max(1000, price + drift);
         return {
-          time: now - (180 - index) * 60,
+          time: now - (180 - index) * stepSeconds,
           open,
           high: Math.max(open, price) + Math.random() * 90,
           low: Math.min(open, price) - Math.random() * 90,
@@ -227,7 +271,7 @@ function useMarketData() {
         const open = last.close;
         price = Math.max(1000, open + (Math.random() - 0.48) * 220);
         const candle = {
-          time: Math.floor(Date.now() / 60000) * 60,
+          time: Math.floor(Date.now() / timeframe.stepMs) * stepSeconds,
           open,
           high: Math.max(open, price) + Math.random() * 80,
           low: Math.min(open, price) - Math.random() * 80,
@@ -242,7 +286,7 @@ function useMarketData() {
 
     function connectSocket(source) {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(source.ws);
+        const ws = new WebSocket(`${source.wsBase}/btcusdt@kline_${timeframe.value}`);
         const timeout = window.setTimeout(() => {
           ws.close();
           reject(new Error(`${source.name} WebSocket timeout`));
@@ -254,7 +298,7 @@ function useMarketData() {
           setStatus({
             mode: "live",
             source: source.name,
-            message: "실시간 WebSocket 연결",
+            message: `${timeframe.label}봉 실시간 WebSocket 연결`,
           });
           resolve(ws);
         });
@@ -297,11 +341,9 @@ function useMarketData() {
           setStatus({
             mode: "connecting",
             source: source.name,
-            message: "초기 캔들 데이터 요청 중",
+            message: `${timeframe.caption} 캔들 데이터 요청 중`,
           });
-          const response = await fetch(source.rest);
-          if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-          const rows = await response.json();
+          const rows = await fetchHistoricalCandles(source, timeframe);
           if (cancelled) return;
           setCandles(parseKlines(rows));
           await connectSocket(source);
@@ -324,82 +366,204 @@ function useMarketData() {
       socket?.close();
       window.clearInterval(demoTimer);
     };
-  }, []);
+  }, [timeframe]);
 
   return { candles, status };
 }
 
-function TradingViewChart() {
-  const containerRef = useRef(null);
-  const [blocked, setBlocked] = useState(false);
+function BinanceChart({ candles, indicators, interval, onIntervalChange, status }) {
+  const [view, setView] = useState({ end: 1, count: 220 });
+  const [drag, setDrag] = useState(null);
+  const width = 1000;
+  const height = 560;
+  const chartTop = 28;
+  const chartHeight = 400;
+  const volumeTop = 452;
+  const volumeHeight = 64;
+  const pricePad = 58;
+  const timePad = 26;
+  const chartWidth = width - pricePad - timePad;
+  const minViewCount = 35;
+  const maxViewCount = candles.length || 220;
+  const currentCount = Math.min(Math.max(view.count, minViewCount), maxViewCount);
+  const currentEnd = Math.min(Math.max(view.end, currentCount / Math.max(candles.length, 1)), 1);
+  const endIndex = Math.min(candles.length, Math.max(currentCount, Math.round(currentEnd * candles.length)));
+  const startIndex = Math.max(0, endIndex - currentCount);
+  const visibleCandles = candles.slice(startIndex, endIndex);
+  const visibleStart = startIndex;
+  const visibleHigh = Math.max(...visibleCandles.map((item) => item.high), 1);
+  const visibleLow = Math.min(...visibleCandles.map((item) => item.low), visibleHigh * 0.98);
+  const priceRange = visibleHigh - visibleLow || 1;
+  const maxVolume = Math.max(...visibleCandles.map((item) => item.volume), 1);
+  const candleGap = chartWidth / Math.max(visibleCandles.length, 1);
+  const candleBody = Math.max(1, Math.min(9, candleGap * 0.58));
+
+  const xAt = (index) => timePad + index * candleGap + candleGap / 2;
+  const yAt = (price) => chartTop + ((visibleHigh - price) / priceRange) * chartHeight;
+  const volumeY = (volume) => volumeTop + volumeHeight - (volume / maxVolume) * volumeHeight;
+
+  const linePath = (values) => {
+    let hasStarted = false;
+    return visibleCandles
+      .map((_, index) => {
+        const value = values[visibleStart + index];
+        if (!value) return null;
+        const command = hasStarted ? "L" : "M";
+        hasStarted = true;
+        return `${command} ${xAt(index).toFixed(2)} ${yAt(value).toFixed(2)}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+  };
+
+  const bollingerUpper = linePath(indicators.bollinger.map((item) => item?.upper));
+  const bollingerLower = linePath(indicators.bollinger.map((item) => item?.lower));
+  const priceTicks = Array.from({ length: 5 }, (_, index) => visibleLow + (priceRange / 4) * index).reverse();
+  const timeTicks = visibleCandles.filter((_, index) => index % Math.max(1, Math.floor(visibleCandles.length / 5)) === 0);
 
   useEffect(() => {
-    if (!containerRef.current) return undefined;
-    setBlocked(false);
+    if (!candles.length) return;
+    setView((current) => ({
+      end: current.end === 1 ? 1 : Math.min(1, current.end),
+      count: Math.min(Math.max(current.count, minViewCount), candles.length),
+    }));
+  }, [candles.length]);
 
-    containerRef.current.innerHTML = `
-      <div class="tradingview-widget-container__widget"></div>
-      <div class="tradingview-widget-copyright">
-        <a href="https://www.tradingview.com/symbols/BTCUSDT/?exchange=BINANCE" rel="noopener nofollow" target="_blank">
-          <span>BTCUSDT chart</span>
-        </a>
-        <span> by TradingView</span>
-      </div>
-    `;
+  useEffect(() => {
+    setView({ end: 1, count: interval === "1d" ? 260 : 220 });
+  }, [interval]);
 
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.type = "text/javascript";
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      autosize: true,
-      symbol: "BINANCE:BTCUSDT",
-      interval: "15",
-      timezone: "Asia/Seoul",
-      theme: "dark",
-      backgroundColor: "rgba(16, 20, 24, 1)",
-      style: "1",
-      locale: "kr",
-      allow_symbol_change: true,
-      calendar: false,
-      support_host: "https://www.tradingview.com",
-      withdateranges: true,
-      hide_side_toolbar: false,
-      save_image: true,
-      details: true,
-      hotlist: false,
-      studies: ["MASimple@tv-basicstudies", "RSI@tv-basicstudies", "MACD@tv-basicstudies"],
+  function handleWheel(event) {
+    event.preventDefault();
+    if (!candles.length) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const pointerRatio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    const zoomFactor = event.deltaY > 0 ? 1.18 : 0.82;
+
+    setView((current) => {
+      const oldCount = Math.min(Math.max(current.count, minViewCount), candles.length);
+      const oldEnd = Math.min(candles.length, Math.max(oldCount, Math.round(current.end * candles.length)));
+      const oldStart = Math.max(0, oldEnd - oldCount);
+      const anchor = oldStart + pointerRatio * oldCount;
+      const nextCount = Math.round(Math.min(candles.length, Math.max(minViewCount, oldCount * zoomFactor)));
+      const nextStart = Math.min(candles.length - nextCount, Math.max(0, Math.round(anchor - pointerRatio * nextCount)));
+      const nextEnd = nextStart + nextCount;
+      return { count: nextCount, end: nextEnd / candles.length };
     });
+  }
 
-    containerRef.current.appendChild(script);
-    const fallbackTimer = window.setTimeout(() => {
-      if (!containerRef.current?.querySelector("iframe")) {
-        setBlocked(true);
-      }
-    }, 5000);
+  function handlePointerDown(event) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ x: event.clientX, end: currentEnd });
+  }
 
-    return () => {
-      window.clearTimeout(fallbackTimer);
-      if (containerRef.current) containerRef.current.innerHTML = "";
-    };
-  }, []);
+  function handlePointerMove(event) {
+    if (!drag || !candles.length) return;
+    const deltaCandles = ((event.clientX - drag.x) / chartWidth) * currentCount;
+    const nextEndIndex = Math.round(drag.end * candles.length - deltaCandles);
+    const clampedEnd = Math.min(candles.length, Math.max(currentCount, nextEndIndex));
+    setView((current) => ({ ...current, end: clampedEnd / candles.length }));
+  }
+
+  function handlePointerUp(event) {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setDrag(null);
+  }
+
+  if (candles.length === 0) {
+    return (
+      <div className="binance-chart-shell">
+        <div className="chart-loading">Binance 캔들 데이터를 불러오는 중</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="tradingview-shell-wrap">
-      <div className="tradingview-shell" ref={containerRef}>
-        <div className="chart-loading">TradingView 차트를 불러오는 중</div>
-      </div>
-      {blocked ? (
-        <div className="widget-fallback">
-          <div>
-            <div className="text-sm font-semibold text-slate-100">TradingView 위젯 로드가 지연되고 있습니다.</div>
-            <div className="mt-1 text-xs text-slate-400">일부 로컬 브라우저에서는 외부 위젯 스크립트가 차단될 수 있습니다.</div>
+    <div className="binance-chart-shell">
+      <div className="chart-toolbar">
+        <div>
+          <div className="text-xs font-medium text-cyan-300">Binance BTCUSDT</div>
+          <div className="mt-1 text-sm text-slate-400">
+            {status.message} · {candles.length.toLocaleString("ko-KR")}개 캔들
           </div>
-          <a href="https://www.tradingview.com/chart/?symbol=BINANCE%3ABTCUSDT" target="_blank" rel="noreferrer">
-            TradingView 열기
-          </a>
         </div>
-      ) : null}
+        <div className="timeframe-tabs" aria-label="차트 시간봉">
+          {TIMEFRAMES.map((item) => (
+            <button
+              className={item.value === interval ? "active" : ""}
+              key={item.value}
+              onClick={() => onIntervalChange(item.value)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <svg
+        className={`binance-chart ${drag ? "dragging" : ""}`}
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Binance BTCUSDT candlestick chart"
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => setDrag(null)}
+      >
+        <rect x="0" y="0" width={width} height={height} fill="#101418" />
+        {priceTicks.map((tick) => {
+          const y = yAt(tick);
+          return (
+            <g key={tick}>
+              <line x1={timePad} x2={width - pricePad} y1={y} y2={y} stroke="rgba(148, 163, 184, 0.10)" />
+              <text x={width - pricePad + 10} y={y + 4} fill="#94a3b8" fontSize="12">
+                {formatUsd(tick, 0)}
+              </text>
+            </g>
+          );
+        })}
+        {bollingerUpper ? <path d={bollingerUpper} fill="none" stroke="rgba(168, 85, 247, 0.65)" strokeWidth="1.4" /> : null}
+        {bollingerLower ? <path d={bollingerLower} fill="none" stroke="rgba(168, 85, 247, 0.65)" strokeWidth="1.4" /> : null}
+        <path d={linePath(indicators.emaFast)} fill="none" stroke="#f59e0b" strokeWidth="2" />
+        <path d={linePath(indicators.emaSlow)} fill="none" stroke="#38bdf8" strokeWidth="2" />
+        {visibleCandles.map((candle, index) => {
+          const x = xAt(index);
+          const up = candle.close >= candle.open;
+          const color = up ? "#22c55e" : "#f43f5e";
+          const openY = yAt(candle.open);
+          const closeY = yAt(candle.close);
+          const bodyY = Math.min(openY, closeY);
+          const bodyHeight = Math.max(2, Math.abs(closeY - openY));
+          const vY = volumeY(candle.volume);
+          return (
+            <g key={`${candle.time}-${index}`}>
+              <line x1={x} x2={x} y1={yAt(candle.high)} y2={yAt(candle.low)} stroke={color} strokeWidth="1.4" />
+              <rect x={x - candleBody / 2} y={bodyY} width={candleBody} height={bodyHeight} rx="1.5" fill={color} />
+              <rect x={x - candleBody / 2} y={vY} width={candleBody} height={volumeTop + volumeHeight - vY} fill={color} opacity="0.25" />
+            </g>
+          );
+        })}
+        <line x1={timePad} x2={width - pricePad} y1={volumeTop} y2={volumeTop} stroke="rgba(148, 163, 184, 0.12)" />
+        {timeTicks.map((tick) => (
+          <text key={tick.time} x={xAt(visibleCandles.indexOf(tick))} y={height - 16} fill="#64748b" fontSize="12" textAnchor="middle">
+            {new Date(tick.time * 1000).toLocaleDateString("ko-KR", {
+              year: interval === "1d" || interval === "4h" ? "2-digit" : undefined,
+              month: "2-digit",
+              day: "2-digit",
+            })}
+          </text>
+        ))}
+      </svg>
+      <div className="chart-legend">
+        <span><i className="legend-ema-fast" /> EMA 9</span>
+        <span><i className="legend-ema-slow" /> EMA 21</span>
+        <span><i className="legend-bollinger" /> Bollinger</span>
+        <button type="button" onClick={() => setView({ end: 1, count: interval === "1d" ? 260 : 220 })}>
+          최근 구간
+        </button>
+      </div>
     </div>
   );
 }
@@ -532,7 +696,9 @@ function TelegramPanel({ signal, lastPrice }) {
 }
 
 function App() {
-  const { candles, status } = useMarketData();
+  const [interval, setInterval] = useState("1d");
+  const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
+  const { candles, status } = useMarketData(interval);
   const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
   const indicators = useMemo(
     () => ({
@@ -557,7 +723,7 @@ function App() {
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-cyan-300">
               <Radio size={16} />
-              {status.source} BTCUSDT 1m
+              {status.source} BTCUSDT {selectedTimeframe.label}
             </div>
             <div className="site-name">수학머리와 정보몸통</div>
             <h1>수학정보융합 비트코인 자동매매</h1>
@@ -585,7 +751,13 @@ function App() {
                 {signal.label}
               </div>
             </div>
-            <TradingViewChart />
+            <BinanceChart
+              candles={candles}
+              indicators={indicators}
+              interval={interval}
+              onIntervalChange={setInterval}
+              status={status}
+            />
           </div>
 
           <aside className="flex flex-col gap-4">
