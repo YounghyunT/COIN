@@ -215,6 +215,62 @@ code {
   font-weight: 650;
 }
 
+.bot-status-strip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(20, 83, 45, 0.26), rgba(8, 47, 73, 0.22));
+  padding: 12px;
+}
+
+.bot-pulse {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.14);
+}
+
+.bot-pulse::after {
+  position: absolute;
+  inset: -7px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: inherit;
+  animation: bot-pulse 1.8s ease-out infinite;
+  content: "";
+}
+
+.bot-status-meta {
+  display: flex;
+  min-width: 112px;
+  flex-direction: column;
+  align-items: flex-end;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.bot-status-meta strong {
+  color: #bbf7d0;
+  font-size: 0.9rem;
+}
+
+@keyframes bot-pulse {
+  from {
+    opacity: 0.8;
+    transform: scale(0.78);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
 .connection,
 .decision,
 .signal-chip,
@@ -349,7 +405,7 @@ code {
 
 .trade-row {
   display: grid;
-  grid-template-columns: 56px 1fr 1fr 70px;
+  grid-template-columns: 56px minmax(150px, 1.5fr) minmax(96px, 1fr) 72px 82px;
   gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 10px 12px;
@@ -384,5 +440,15 @@ code {
 
   .trade-row {
     grid-template-columns: 48px 1fr;
+    row-gap: 4px;
+  }
+
+  .bot-status-strip {
+    grid-template-columns: auto 1fr;
+  }
+
+  .bot-status-meta {
+    grid-column: 1 / -1;
+    align-items: flex-start;
   }
 }

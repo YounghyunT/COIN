@@ -1096,6 +1096,7 @@ function AiBotPanel({ botState }) {
     ? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl_pct ?? 0), 0) / sellTrades.length
     : null;
   const lastSignal = state?.last_signal;
+  const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
   const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
   const suggestedSellPct = lastSignal?.side === "SELL" ? (Number(lastSignal.score ?? 0) >= 6 ? 100 : Number(lastSignal.score ?? 0) >= 4 ? 75 : 50) : null;
 
@@ -1103,7 +1104,18 @@ function AiBotPanel({ botState }) {
     <section className="panel">
       <div className="section-title">
         <Bot size={18} />
-        <span>AI봇 모의투자</span>
+        <span>풍덕자이v1.0</span>
+      </div>
+      <div className="bot-status-strip">
+        <div className="bot-pulse" />
+        <div>
+          <div className="text-sm font-semibold text-slate-100">자동 시뮬레이션 가동 중</div>
+          <div className="text-xs text-slate-500">cron-jobs가 봇을 깨우고 Supabase에 체결 상태를 기록합니다.</div>
+        </div>
+        <div className="bot-status-meta">
+          <span>최근 동기화</span>
+          <strong>{lastRunLabel}</strong>
+        </div>
       </div>
       {botState.error ? (
         <div className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
@@ -1143,11 +1155,12 @@ function AiBotPanel({ botState }) {
               <span className={trade.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{trade.side}</span>
               <span>{Number(trade.amount).toFixed(6)} BTC · {trade.position_pct ? `${Math.round(Number(trade.position_pct) * 100)}%` : "--"}</span>
               <span>${formatUsd(trade.price)}</span>
-              <span className={Number(trade.realized_pnl ?? 0) >= 0 ? "text-slate-500" : "text-rose-300"}>
+              <span className={Number(trade.realized_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>
                 {trade.side === "SELL" && trade.realized_pnl_pct !== null && trade.realized_pnl_pct !== undefined
                   ? `${Number(trade.realized_pnl_pct) >= 0 ? "+" : ""}${Number(trade.realized_pnl_pct).toFixed(2)}%`
-                  : new Date(trade.created_at).toLocaleTimeString()}
+                  : "--"}
               </span>
+              <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
             </div>
           ))
         )}
@@ -1200,7 +1213,7 @@ function App() {
               {status.source} BTCUSDT {selectedTimeframe.label}
             </div>
             <div className="site-name">수학머리와 정보몸통</div>
-            <h1>수학정보융합 비트코인 자동매매</h1>
+            <h1>계층사다리v1.0</h1>
             <div className="taglines">
               <span>규칙은 단 하나, 욕심 부리지말고 프로그램을 믿을 것.</span>
               <span>데이터는 거짓말을 하지 않는다.</span>
