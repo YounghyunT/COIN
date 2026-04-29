@@ -69,4 +69,3 @@ export default async function handler(request, response) {
     response.status(500).json({ ok: false, error: error.message });
   }
 }
-

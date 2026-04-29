@@ -1,89 +1,123 @@
 import { fetchCandles, fetchFearGreedIndex, rsi, sma } from "./market.js";
 
 const INITIAL_CASH = 10000;
-const POSITION_SIZE = 0.25;
+const POSITION_SIZE = 0.5;
+
+function ema(values, period) {
+  if (values.length === 0) return [];
+  const multiplier = 2 / (period + 1);
+  const output = [];
+  let previous = values[0];
+  values.forEach((value, index) => {
+    previous = index === 0 ? value : value * multiplier + previous * (1 - multiplier);
+    output.push(previous);
+  });
+  return output;
+}
 
 function buildStrategySignal({ alertCandles, dailyCandles, fearGreed, entryPrice }) {
   const last = alertCandles.at(-1);
-  if (!last) return { side: "WAIT", label: "대기", score: 0, reason: "15분봉 데이터 수집 중" };
+  const previous = alertCandles.at(-4) ?? alertCandles.at(-2);
+  if (!last) return { side: "WAIT", label: "대기", score: 0, reason: "1분봉 데이터 수집 중" };
 
   const alertCloses = alertCandles.map((candle) => candle.close);
   const dailyCloses = dailyCandles.map((candle) => candle.close);
   const ma20 = sma(dailyCloses, 20).at(-1);
   const rsi14 = rsi(alertCloses).at(-1);
+  const emaFast = ema(alertCloses, 5).at(-1);
+  const emaSlow = ema(alertCloses, 20).at(-1);
   const fearGreedValue = fearGreed?.value;
   const price = last.close;
   const ma20Gap = ma20 ? ((price - ma20) / ma20) * 100 : null;
   const pnl = entryPrice ? ((price - entryPrice) / entryPrice) * 100 : null;
+  const momentum = previous ? ((price - previous.close) / previous.close) * 100 : 0;
   const buyReasons = [];
   const sellReasons = [];
   let buyScore = 0;
   let sellScore = 0;
 
   if (fearGreedValue !== null && fearGreedValue !== undefined) {
-    if (fearGreedValue <= 30) {
+    if (fearGreedValue <= 60) {
       buyScore += 2;
-      buyReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 공포 구간`);
+      buyReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 매수 허용 구간`);
     }
-    if (fearGreedValue >= 70) {
+    if (fearGreedValue >= 55) {
       sellScore += 2;
-      sellReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 탐욕 구간`);
+      sellReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 매도 경계 구간`);
     }
   }
 
   if (ma20Gap !== null) {
-    if (ma20Gap <= -3) {
+    if (ma20Gap <= 1) {
       buyScore += 2;
-      buyReasons.push(`현재가가 20일선 대비 ${Math.abs(ma20Gap).toFixed(1)}% 낮음`);
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 저평가 테스트 조건`);
     } else {
       buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%`);
     }
   }
 
   if (rsi14) {
-    if (rsi14 <= 30) {
+    if (rsi14 <= 55) {
       buyScore += 2;
-      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도`);
-    } else if (rsi14 <= 35) {
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격적 매수 허용`);
+    } else if (rsi14 <= 62) {
       buyScore += 1;
-      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도 근접`);
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 중립 매수 후보`);
     } else {
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
     }
 
-    if (rsi14 >= 70) {
+    if (rsi14 >= 58) {
       sellScore += 2;
-      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매수`);
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격적 과열 기준`);
     }
   }
 
-  if (pnl !== null) {
-    if (pnl >= 10) {
-      sellScore += 4;
-      sellReasons.push(`매수가 대비 +${pnl.toFixed(1)}%: 익절 조건`);
-    } else if (pnl <= -5) {
-      sellScore += 4;
-      sellReasons.push(`매수가 대비 ${pnl.toFixed(1)}%: 손절 조건`);
+  if (emaFast && emaSlow) {
+    if (emaFast >= emaSlow) {
+      buyScore += 1;
+      buyReasons.push("EMA 5가 EMA 20 위");
     } else {
-      sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%`);
+      sellScore += 1;
+      sellReasons.push("EMA 5가 EMA 20 아래");
+    }
+  }
+
+  if (momentum >= 0.05) {
+    buyScore += 1;
+    buyReasons.push(`최근 단기 모멘텀 +${momentum.toFixed(2)}%`);
+  } else if (momentum <= -0.05) {
+    sellScore += 1;
+    sellReasons.push(`최근 단기 모멘텀 ${momentum.toFixed(2)}%`);
+  }
+
+  if (pnl !== null) {
+    if (pnl >= 0.3) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 테스트 익절`);
+    } else if (pnl <= -0.3) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 테스트 손절`);
+    } else {
+      sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`);
     }
   } else {
     sellReasons.push("보유 포지션 없음");
   }
 
-  if (entryPrice && sellScore >= 3) {
-    return { side: "SELL", label: "매도 신호", score: sellScore, reason: sellReasons.join(", ") };
+  if (entryPrice && sellScore >= 2) {
+    return { side: "SELL", label: "공격 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
-  if (!entryPrice && buyScore >= 4) {
-    return { side: "BUY", label: "매수 신호", score: buyScore, reason: buyReasons.join(", ") };
+  if (!entryPrice && buyScore >= 3) {
+    return { side: "BUY", label: "공격 매수", score: buyScore, reason: buyReasons.join(", ") };
   }
 
   if (entryPrice) {
     return { side: "WAIT", label: "보유 대기", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
   }
 
-  return { side: "WAIT", label: buyScore >= 3 ? "매수 관찰" : "중립 대기", score: buyScore, reason: buyReasons.join(", ") };
+  return { side: "WAIT", label: buyScore >= 2 ? "매수 관찰" : "중립 대기", score: buyScore, reason: buyReasons.join(", ") };
 }
 
 function defaultState() {
@@ -101,7 +135,7 @@ function defaultState() {
 export async function evaluateBot(previousState) {
   const state = previousState ?? defaultState();
   const [{ candles: alertCandles, source }, { candles: dailyCandles }, fearGreed] = await Promise.all([
-    fetchCandles("15m", 240),
+    fetchCandles("1m", 240),
     fetchCandles("1d", 80),
     fetchFearGreedIndex(),
   ]);
@@ -168,4 +202,3 @@ export async function evaluateBot(previousState) {
     alreadyProcessed,
   };
 }
-
