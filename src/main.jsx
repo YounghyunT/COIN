@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -39,6 +39,10 @@ const TIMEFRAMES = [
   { label: "1일", value: "1d", caption: "2023년부터", stepMs: 24 * 60 * 60_000, maxRequests: 4 },
 ];
 
+const ALERT_INTERVAL = "15m";
+const TREND_FILTER_INTERVAL = "1h";
+const DAILY_FILTER_INTERVAL = "1d";
+const FEAR_GREED_ENDPOINT = "https://api.alternative.me/fng/?limit=1";
 const LONG_HISTORY_START = Date.UTC(2023, 0, 1);
 const BINANCE_LIMIT = 1000;
 
@@ -119,6 +123,17 @@ function macd(values) {
   }));
 }
 
+function buildIndicators(candles) {
+  const closes = candles.map((candle) => candle.close);
+  return {
+    emaFast: ema(closes, 9),
+    emaSlow: ema(closes, 21),
+    rsi: rsi(closes),
+    bollinger: bollinger(closes),
+    macd: macd(closes),
+  };
+}
+
 function buildSignal(candles, indicators) {
   const last = candles.at(-1);
   const previous = candles.at(-2);
@@ -172,6 +187,152 @@ function buildSignal(candles, indicators) {
   if (score >= 2) return { side: "BUY", label: "매수 관심", score, reason: reasons.join(", ") };
   if (score <= -2) return { side: "SELL", label: "매도/관망", score, reason: reasons.join(", ") };
   return { side: "WAIT", label: "중립 대기", score, reason: reasons.join(", ") };
+}
+
+function buildTrendFilter(candles, indicators) {
+  const last = candles.at(-1);
+  const emaFast = indicators.emaFast.at(-1);
+  const emaSlow = indicators.emaSlow.at(-1);
+  const band = indicators.bollinger.at(-1);
+
+  if (!last || !emaFast || !emaSlow || !band) {
+    return { side: "NEUTRAL", label: "추세 확인 중", reason: "1시간봉 데이터 수집 중" };
+  }
+
+  if (emaFast > emaSlow && last.close >= band.middle) {
+    return { side: "BULL", label: "상승 추세", reason: "1시간봉 EMA 9 > EMA 21, 종가가 볼린저 중심선 위" };
+  }
+
+  if (emaFast < emaSlow && last.close <= band.middle) {
+    return { side: "BEAR", label: "하락 추세", reason: "1시간봉 EMA 9 < EMA 21, 종가가 볼린저 중심선 아래" };
+  }
+
+  return { side: "NEUTRAL", label: "중립 추세", reason: "1시간봉 추세 방향이 뚜렷하지 않음" };
+}
+
+function applyTrendFilter(signal, trend) {
+  if (signal.side === "BUY" && trend.side === "BEAR") {
+    return {
+      ...signal,
+      side: "WAIT",
+      label: "매수 보류",
+      reason: `${signal.reason} · 장기 추세 필터: ${trend.reason}`,
+    };
+  }
+
+  if (signal.side === "SELL" && trend.side === "BULL") {
+    return {
+      ...signal,
+      side: "WAIT",
+      label: "매도 보류",
+      reason: `${signal.reason} · 장기 추세 필터: ${trend.reason}`,
+    };
+  }
+
+  return {
+    ...signal,
+    reason: `${signal.reason} · 장기 추세 필터: ${trend.reason}`,
+  };
+}
+
+function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fearGreed, entryPrice }) {
+  const last = alertCandles.at(-1);
+  if (!last) return { side: "WAIT", label: "대기", score: 0, reason: "15분봉 데이터 수집 중" };
+
+  const dailyCloses = dailyCandles.map((candle) => candle.close);
+  const ma20 = sma(dailyCloses, 20).at(-1);
+  const rsi14 = alertIndicators.rsi.at(-1);
+  const fearGreedValue = fearGreed?.value;
+  const price = last.close;
+  const ma20Gap = ma20 ? ((price - ma20) / ma20) * 100 : null;
+  const pnl = entryPrice ? ((price - entryPrice) / entryPrice) * 100 : null;
+  const buyReasons = [];
+  const sellReasons = [];
+  let buyScore = 0;
+  let sellScore = 0;
+
+  if (fearGreedValue !== null && fearGreedValue !== undefined) {
+    if (fearGreedValue <= 30) {
+      buyScore += 2;
+      buyReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 공포 구간`);
+    }
+    if (fearGreedValue >= 70) {
+      sellScore += 2;
+      sellReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 탐욕 구간`);
+    }
+  } else {
+    buyReasons.push("공포·탐욕 지수 확인 중");
+    sellReasons.push("공포·탐욕 지수 확인 중");
+  }
+
+  if (ma20Gap !== null) {
+    if (ma20Gap <= -3) {
+      buyScore += 2;
+      buyReasons.push(`현재가가 20일선 대비 ${Math.abs(ma20Gap).toFixed(1)}% 낮음`);
+    } else {
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%`);
+    }
+  } else {
+    buyReasons.push("20일 이동평균선 계산 중");
+  }
+
+  if (rsi14) {
+    if (rsi14 <= 30) {
+      buyScore += 2;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도`);
+    } else if (rsi14 <= 35) {
+      buyScore += 1;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도 근접`);
+    } else {
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
+    }
+
+    if (rsi14 >= 70) {
+      sellScore += 2;
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매수`);
+    }
+  } else {
+    buyReasons.push("RSI(14) 계산 중");
+    sellReasons.push("RSI(14) 계산 중");
+  }
+
+  if (pnl !== null) {
+    if (pnl >= 10) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 +${pnl.toFixed(1)}%: 익절 조건`);
+    } else if (pnl <= -5) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 ${pnl.toFixed(1)}%: 손절 조건`);
+    } else {
+      sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%`);
+    }
+  } else {
+    sellReasons.push("보유 포지션 없음");
+  }
+
+  if (entryPrice && sellScore >= 3) {
+    return { side: "SELL", label: "매도 신호", score: sellScore, reason: sellReasons.join(", ") };
+  }
+
+  if (!entryPrice && buyScore >= 4) {
+    return { side: "BUY", label: "매수 신호", score: buyScore, reason: buyReasons.join(", ") };
+  }
+
+  if (entryPrice) {
+    return {
+      side: "WAIT",
+      label: "보유 대기",
+      score: Math.max(buyScore, sellScore),
+      reason: sellReasons.join(", "),
+    };
+  }
+
+  return {
+    side: "WAIT",
+    label: buyScore >= 3 ? "매수 관찰" : "중립 대기",
+    score: buyScore,
+    reason: buyReasons.join(", "),
+  };
 }
 
 function buildRestUrl(source, interval, startTime) {
@@ -371,7 +532,105 @@ function useMarketData(interval) {
   return { candles, status };
 }
 
+function useFearGreedIndex() {
+  const [fearGreed, setFearGreed] = useState({
+    value: null,
+    label: "확인 중",
+    status: "공포·탐욕 지수 요청 중",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFearGreed() {
+      try {
+        const response = await fetch(FEAR_GREED_ENDPOINT);
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const payload = await response.json();
+        const item = payload?.data?.[0];
+        const value = Number(item?.value);
+        if (!Number.isFinite(value)) throw new Error("Fear and Greed payload is invalid");
+        if (!cancelled) {
+          setFearGreed({
+            value,
+            label: item?.value_classification ?? "Unknown",
+            status: "Alternative.me 공포·탐욕 지수",
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFearGreed({
+            value: null,
+            label: "불러오기 실패",
+            status: "공포·탐욕 지수를 불러오지 못했습니다",
+          });
+        }
+      }
+    }
+
+    loadFearGreed();
+    const timer = window.setInterval(loadFearGreed, 10 * 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return fearGreed;
+}
+
+function useBotState() {
+  const [botState, setBotState] = useState({
+    loading: true,
+    error: null,
+    state: null,
+    trades: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBotState() {
+      try {
+        const response = await fetch("/api/bot-state");
+        if (!response.ok) throw new Error("봇 상태 API 응답 실패");
+        const payload = await response.json();
+        if (!cancelled) {
+          setBotState({
+            loading: false,
+            error: null,
+            state: payload.state,
+            trades: payload.trades ?? [],
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBotState((current) => ({
+            ...current,
+            loading: false,
+            error: "Supabase 연결 전에는 AI봇 상태를 불러올 수 없습니다.",
+          }));
+        }
+      }
+    }
+
+    loadBotState();
+    const timer = window.setInterval(loadBotState, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return botState;
+}
+
 function BinanceChart({ candles, indicators, interval, onIntervalChange, status }) {
+  const chartRef = useRef(null);
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
   const [view, setView] = useState({ end: 1, count: 220 });
   const [drag, setDrag] = useState(null);
   const width = 1000;
@@ -433,13 +692,12 @@ function BinanceChart({ candles, indicators, interval, onIntervalChange, status 
     setView({ end: 1, count: interval === "1d" ? 260 : 220 });
   }, [interval]);
 
-  function handleWheel(event) {
-    event.preventDefault();
+  function zoomChart(clientX, deltaY, targetElement) {
     if (!candles.length) return;
 
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const pointerRatio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-    const zoomFactor = event.deltaY > 0 ? 1.18 : 0.82;
+    const bounds = targetElement.getBoundingClientRect();
+    const pointerRatio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
+    const zoomFactor = deltaY > 0 ? 1.18 : 0.82;
 
     setView((current) => {
       const oldCount = Math.min(Math.max(current.count, minViewCount), candles.length);
@@ -453,13 +711,79 @@ function BinanceChart({ candles, indicators, interval, onIntervalChange, status 
     });
   }
 
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return undefined;
+
+    const handleNativeWheel = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      zoomChart(event.clientX, event.deltaY, element);
+    };
+
+    element.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleNativeWheel);
+  }, [candles.length]);
+
+  function viewFromSnapshot(snapshot, pointerRatio, nextCount) {
+    const oldEnd = Math.min(candles.length, Math.max(snapshot.count, Math.round(snapshot.end * candles.length)));
+    const oldStart = Math.max(0, oldEnd - snapshot.count);
+    const anchor = oldStart + pointerRatio * snapshot.count;
+    const nextStart = Math.min(candles.length - nextCount, Math.max(0, Math.round(anchor - pointerRatio * nextCount)));
+    const nextEnd = nextStart + nextCount;
+    return { count: nextCount, end: nextEnd / candles.length };
+  }
+
+  function pointerDistance(points) {
+    const [first, second] = points;
+    return Math.hypot(first.x - second.x, first.y - second.y);
+  }
+
+  function pointerMidpoint(points) {
+    const [first, second] = points;
+    return {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    };
+  }
+
   function handlePointerDown(event) {
     event.currentTarget.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointersRef.current.size === 2) {
+      const points = [...pointersRef.current.values()];
+      const midpoint = pointerMidpoint(points);
+      const bounds = event.currentTarget.getBoundingClientRect();
+      pinchRef.current = {
+        distance: pointerDistance(points),
+        midpointRatio: Math.min(1, Math.max(0, (midpoint.x - bounds.left) / bounds.width)),
+        view: { end: currentEnd, count: currentCount },
+      };
+      setDrag(null);
+      return;
+    }
+
     setDrag({ x: event.clientX, end: currentEnd });
   }
 
   function handlePointerMove(event) {
-    if (!drag || !candles.length) return;
+    if (!candles.length) return;
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const distance = pointerDistance([...pointersRef.current.values()]);
+      if (!distance) return;
+      const nextCount = Math.round(
+        Math.min(candles.length, Math.max(minViewCount, pinchRef.current.view.count * (pinchRef.current.distance / distance))),
+      );
+      setView(viewFromSnapshot(pinchRef.current.view, pinchRef.current.midpointRatio, nextCount));
+      return;
+    }
+
+    if (!drag) return;
     const deltaCandles = ((event.clientX - drag.x) / chartWidth) * currentCount;
     const nextEndIndex = Math.round(drag.end * candles.length - deltaCandles);
     const clampedEnd = Math.min(candles.length, Math.max(currentCount, nextEndIndex));
@@ -467,8 +791,18 @@ function BinanceChart({ candles, indicators, interval, onIntervalChange, status 
   }
 
   function handlePointerUp(event) {
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    setDrag(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointersRef.current.delete(event.pointerId);
+    pinchRef.current = null;
+
+    const remaining = [...pointersRef.current.values()][0];
+    if (remaining) {
+      setDrag({ x: remaining.x, end: currentEnd });
+    } else {
+      setDrag(null);
+    }
   }
 
   if (candles.length === 0) {
@@ -504,13 +838,13 @@ function BinanceChart({ candles, indicators, interval, onIntervalChange, status 
       <svg
         className={`binance-chart ${drag ? "dragging" : ""}`}
         viewBox={`0 0 ${width} ${height}`}
+        ref={chartRef}
         role="img"
         aria-label="Binance BTCUSDT candlestick chart"
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={() => setDrag(null)}
+        onPointerCancel={handlePointerUp}
       >
         <rect x="0" y="0" width={width} height={height} fill="#101418" />
         {priceTicks.map((tick) => {
@@ -578,11 +912,20 @@ function IndicatorCard({ title, value, caption, tone }) {
   );
 }
 
-function PaperTrading({ lastPrice, signal }) {
+function PaperTrading({ lastPrice, signal, onPositionChange }) {
   const [cash, setCash] = useState(10000);
   const [btc, setBtc] = useState(0);
+  const [avgEntry, setAvgEntry] = useState(null);
   const [logs, setLogs] = useState([]);
   const equity = cash + btc * lastPrice;
+  const pnl = avgEntry && btc > 0 ? ((lastPrice - avgEntry) / avgEntry) * 100 : null;
+
+  useEffect(() => {
+    onPositionChange?.({
+      btc,
+      entryPrice: btc > 0 ? avgEntry : null,
+    });
+  }, [btc, avgEntry, onPositionChange]);
 
   function trade(side) {
     if (!lastPrice) return;
@@ -590,14 +933,19 @@ function PaperTrading({ lastPrice, signal }) {
       const spend = Math.min(cash, equity * 0.25);
       if (spend <= 0) return;
       const amount = spend / lastPrice;
+      const nextBtc = btc + amount;
+      const nextAvgEntry = ((avgEntry || 0) * btc + spend) / nextBtc;
       setCash((value) => value - spend);
       setBtc((value) => value + amount);
+      setAvgEntry(nextAvgEntry);
       setLogs((items) => [{ side: "BUY", price: lastPrice, amount, time: new Date().toLocaleTimeString() }, ...items]);
     } else {
       const amount = Math.min(btc, btc * 0.5 || 0);
       if (amount <= 0) return;
+      const nextBtc = btc - amount;
       setCash((value) => value + amount * lastPrice);
-      setBtc((value) => value - amount);
+      setBtc(nextBtc);
+      if (nextBtc <= 0.00000001) setAvgEntry(null);
       setLogs((items) => [{ side: "SELL", price: lastPrice, amount, time: new Date().toLocaleTimeString() }, ...items]);
     }
   }
@@ -608,10 +956,11 @@ function PaperTrading({ lastPrice, signal }) {
         <Wallet size={18} />
         <span>모의투자</span>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <IndicatorCard title="총 평가금" value={`$${formatUsd(equity)}`} caption="현금 + BTC 평가액" />
         <IndicatorCard title="보유 현금" value={`$${formatUsd(cash)}`} caption="가상 USDT" />
         <IndicatorCard title="보유 BTC" value={btc.toFixed(6)} caption="모의 수량" />
+        <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption={pnl !== null ? `현재 수익률 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%` : "포지션 없음"} />
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
         <button className="action-button buy" onClick={() => trade("buy")}>
@@ -644,11 +993,12 @@ function PaperTrading({ lastPrice, signal }) {
   );
 }
 
-function TelegramPanel({ signal, lastPrice }) {
+function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState("Vercel 환경변수 설정 후 전송 가능");
+  const lastSentRef = useRef(null);
 
-  async function sendSignal() {
+  async function sendSignal(mode = "manual") {
     setStatus("전송 중...");
     try {
       const response = await fetch("/api/telegram-signal", {
@@ -657,16 +1007,28 @@ function TelegramPanel({ signal, lastPrice }) {
         body: JSON.stringify({
           signal: signal.label,
           price: lastPrice,
-          reason: signal.reason,
+          reason: `[전략 신호] ${signal.reason}`,
+          timeframe: "15분봉",
+          trend: `${trend.label}: ${trend.reason}`,
           timestamp: new Date().toISOString(),
         }),
       });
       if (!response.ok) throw new Error("텔레그램 API 응답 실패");
-      setStatus("텔레그램으로 신호를 보냈습니다.");
+      setStatus(mode === "auto" ? "15분봉 신호를 자동 전송했습니다." : "텔레그램으로 신호를 보냈습니다.");
     } catch (error) {
       setStatus("전송 실패: 환경변수 또는 배포 API를 확인하세요.");
     }
   }
+
+  useEffect(() => {
+    if (!enabled || signal.side === "WAIT" || !lastPrice || !signalTime) return;
+
+    const signalKey = `${signal.side}-${signalTime}`;
+    if (lastSentRef.current === signalKey) return;
+
+    lastSentRef.current = signalKey;
+    sendSignal("auto");
+  }, [enabled, signal, lastPrice, signalTime]);
 
   return (
     <section className="panel">
@@ -676,20 +1038,67 @@ function TelegramPanel({ signal, lastPrice }) {
       </div>
       <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
         <div>
-          <div className="text-sm font-medium text-slate-200">신호 알림 준비</div>
+          <div className="text-sm font-medium text-slate-200">전략 알림 {enabled ? "켜짐" : "대기"}</div>
           <div className="text-xs text-slate-500">{status}</div>
         </div>
         <button className={`toggle ${enabled ? "on" : ""}`} onClick={() => setEnabled((value) => !value)}>
           {enabled ? <Play size={15} /> : <Pause size={15} />}
         </button>
       </div>
-      <button className="mt-4 w-full justify-center action-button neutral" onClick={sendSignal}>
+      <button className="mt-4 w-full justify-center action-button neutral" onClick={() => sendSignal("manual")}>
         <Send size={17} />
-        현재 신호 테스트 전송
+        전략 신호 테스트 전송
       </button>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
-        Vercel 프로젝트에 <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>를 등록하면 이 버튼이 실제
-        봇 메시지를 보냅니다.
+        알림은 15분봉 RSI, 20일 이동평균선, 공포·탐욕 지수, 평균 매수가 대비 수익률을 종합해 보냅니다. Vercel 프로젝트에{" "}
+        <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>를 등록하면 실제 봇 메시지를 보냅니다.
+      </div>
+    </section>
+  );
+}
+
+function AiBotPanel({ botState }) {
+  const state = botState.state;
+  const trades = botState.trades ?? [];
+  const cash = Number(state?.cash ?? 0);
+  const btc = Number(state?.btc ?? 0);
+  const avgEntry = state?.avg_entry ? Number(state.avg_entry) : null;
+  const equity = state?.equity ? Number(state.equity) : cash;
+
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <Bot size={18} />
+        <span>AI봇 모의투자</span>
+      </div>
+      {botState.error ? (
+        <div className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
+          {botState.error} Supabase 테이블과 Vercel 환경변수를 설정하면 15분마다 자동 시뮬레이션이 기록됩니다.
+        </div>
+      ) : null}
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <IndicatorCard title="총 평가금" value={state ? `$${formatUsd(equity)}` : "--"} caption="DB 저장 계좌" />
+        <IndicatorCard title="보유 현금" value={state ? `$${formatUsd(cash)}` : "--"} caption="가상 USDT" />
+        <IndicatorCard title="보유 BTC" value={state ? btc.toFixed(6) : "--"} caption="AI봇 수량" />
+        <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="익절 +10% / 손절 -5%" />
+      </div>
+      <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
+        <div>마지막 실행: {state?.last_run_at ? new Date(state.last_run_at).toLocaleString() : botState.loading ? "불러오는 중" : "--"}</div>
+        <div>마지막 신호: {state?.last_signal?.label ?? "--"}</div>
+      </div>
+      <div className="mt-5 max-h-52 overflow-auto rounded-md border border-white/10">
+        {trades.length === 0 ? (
+          <div className="p-4 text-sm text-slate-500">아직 AI봇 체결 기록이 없습니다.</div>
+        ) : (
+          trades.map((trade) => (
+            <div className="trade-row" key={trade.id}>
+              <span className={trade.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{trade.side}</span>
+              <span>{Number(trade.amount).toFixed(6)} BTC</span>
+              <span>${formatUsd(trade.price)}</span>
+              <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );
@@ -697,24 +1106,37 @@ function TelegramPanel({ signal, lastPrice }) {
 
 function App() {
   const [interval, setInterval] = useState("1d");
+  const botState = useBotState();
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
-  const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
-  const indicators = useMemo(
-    () => ({
-      emaFast: ema(closes, 9),
-      emaSlow: ema(closes, 21),
-      rsi: rsi(closes),
-      bollinger: bollinger(closes),
-      macd: macd(closes),
-    }),
-    [closes],
-  );
+  const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
+  const { candles: trendCandles, status: trendStatus } = useMarketData(TREND_FILTER_INTERVAL);
+  const { candles: dailyCandles } = useMarketData(DAILY_FILTER_INTERVAL);
+  const fearGreed = useFearGreedIndex();
+  const indicators = useMemo(() => buildIndicators(candles), [candles]);
+  const alertIndicators = useMemo(() => buildIndicators(alertCandles), [alertCandles]);
+  const trendIndicators = useMemo(() => buildIndicators(trendCandles), [trendCandles]);
   const signal = useMemo(() => buildSignal(candles, indicators), [candles, indicators]);
+  const trendFilter = useMemo(() => buildTrendFilter(trendCandles, trendIndicators), [trendCandles, trendIndicators]);
+  const botEntryPrice = botState.state?.avg_entry ? Number(botState.state.avg_entry) : null;
+  const alertSignal = useMemo(
+    () =>
+      buildStrategySignal({
+        alertCandles,
+        alertIndicators,
+        dailyCandles,
+        fearGreed,
+        entryPrice: botEntryPrice,
+      }),
+    [alertCandles, alertIndicators, dailyCandles, fearGreed, botEntryPrice],
+  );
   const last = candles.at(-1);
+  const alertLast = alertCandles.at(-1);
   const lastRsi = indicators.rsi.at(-1);
   const lastMacd = indicators.macd.at(-1);
   const lastBand = indicators.bollinger.at(-1);
+  const dailyMa20 = useMemo(() => sma(dailyCandles.map((candle) => candle.close), 20).at(-1), [dailyCandles]);
+  const ma20Gap = dailyMa20 && alertLast ? ((alertLast.close - dailyMa20) / dailyMa20) * 100 : null;
 
   return (
     <main className="min-h-screen bg-[#0b0f12] text-slate-100">
@@ -764,19 +1186,21 @@ function App() {
             <section className="panel">
               <div className="section-title">
                 <Bell size={18} />
-                <span>매수/매도 판단</span>
+                <span>전략 알림 판단</span>
               </div>
-              <div className={`signal-box ${signal.side.toLowerCase()}`}>
-                <div className="text-sm text-slate-400">현재 판단</div>
-                <div className="mt-1 text-3xl font-semibold">{signal.label}</div>
-                <div className="mt-3 text-sm leading-6 text-slate-300">{signal.reason}</div>
+              <div className={`signal-box ${alertSignal.side.toLowerCase()}`}>
+                <div className="text-sm text-slate-400">15분봉 RSI + 20일선 + 공포·탐욕</div>
+                <div className="mt-1 text-3xl font-semibold">{alertSignal.label}</div>
+                <div className="mt-3 text-sm leading-6 text-slate-300">{alertSignal.reason}</div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <IndicatorCard title="신뢰 점수" value={signal.score.toFixed(1)} caption="규칙 기반 합산" />
-                <IndicatorCard title="업데이트" value={last ? new Date(last.time * 1000).toLocaleTimeString() : "--"} caption={status.message} />
+                <IndicatorCard title="전략 점수" value={alertSignal.score.toFixed(1)} caption={alertStatus.message} />
+                <IndicatorCard title="공포·탐욕" value={fearGreed.value ?? "--"} caption={`${fearGreed.label} · ${fearGreed.status}`} />
+                <IndicatorCard title="20일선 대비" value={ma20Gap !== null ? `${ma20Gap >= 0 ? "+" : ""}${ma20Gap.toFixed(1)}%` : "--"} caption={dailyMa20 ? `MA20 $${formatUsd(dailyMa20, 0)}` : "계산 중"} />
+                <IndicatorCard title="평균 매수가" value={botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"} caption={botEntryPrice ? "익절 +10% / 손절 -5%" : "보유 포지션 없음"} />
               </div>
             </section>
-            <TelegramPanel signal={signal} lastPrice={last?.close} />
+            <TelegramPanel signal={alertSignal} lastPrice={alertLast?.close} signalTime={alertLast?.time} trend={trendFilter} />
           </aside>
         </section>
 
@@ -798,7 +1222,7 @@ function App() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <PaperTrading lastPrice={last?.close || 0} signal={signal} />
+          <AiBotPanel botState={botState} />
           <section className="panel">
             <div className="section-title">
               <Settings2 size={18} />
@@ -829,4 +1253,7 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+const rootElement = document.getElementById("root");
+const root = window.__btcSignalRoot ?? createRoot(rootElement);
+window.__btcSignalRoot = root;
+root.render(<App />);

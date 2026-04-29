@@ -13,11 +13,13 @@ export default async function handler(request, response) {
   }
 
   try {
-    const { signal, price, reason, timestamp } = request.body ?? {};
+    const { signal, price, reason, timeframe, trend, timestamp } = request.body ?? {};
     const text = [
       `[Y & K] BTC Signal Lab: ${signal ?? "NEUTRAL"}`,
+      timeframe ? `Timeframe: ${timeframe}` : null,
       price ? `Price: ${Number(price).toLocaleString("en-US")} USDT` : null,
       reason ? `Reason: ${reason}` : null,
+      trend ? `Trend filter: ${trend}` : null,
       timestamp ? `Time: ${timestamp}` : null,
     ]
       .filter(Boolean)

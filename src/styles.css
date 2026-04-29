@@ -103,6 +103,7 @@ code {
   width: 100%;
   min-height: 560px;
   background: #101418;
+  overscroll-behavior: contain;
 }
 
 .chart-toolbar {
@@ -146,6 +147,7 @@ code {
   cursor: grab;
   touch-action: none;
   user-select: none;
+  overscroll-behavior: contain;
 }
 
 .binance-chart.dragging {
@@ -366,9 +368,18 @@ code {
 
 @media (max-width: 640px) {
   .topbar,
-  .chart-head {
+  .chart-head,
+  .chart-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .timeframe-tabs {
+    justify-content: flex-start;
+  }
+
+  .binance-chart {
+    height: 480px;
   }
 
   .trade-row {
