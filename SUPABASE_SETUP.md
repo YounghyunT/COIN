@@ -3,6 +3,7 @@
 1. Create a Supabase project.
 2. Open the Supabase SQL Editor and run `supabase/schema.sql`.
    - If the tables already exist, run it again after updates. The `alter table ... add column if not exists` lines safely add new performance columns without deleting existing bot data.
+   - To restart the paper bot from scratch with $50,000, run `supabase/reset-bot.sql`.
 3. Add these environment variables in Vercel:
 
 ```text
@@ -28,7 +29,7 @@ Vercel Hobby accounts only allow daily Vercel Cron jobs. This project uses GitHu
 
 The bot stores:
 
-- cash
+- cash, starting from $50,000 after reset
 - BTC balance
 - average entry price
 - equity
@@ -42,7 +43,7 @@ The current strategy uses:
 - current BTC price no more than 1% above the 20-day moving average for buy pressure
 - RSI(14) <= 55 on the 1-minute chart for aggressive buy pressure
 - EMA 5/20 and short momentum for extra aggressive entries/exits
-- profit >= 0.3% from average entry for test take-profit sell
-- loss <= -0.3% from average entry for test stop-loss sell
+- profit >= 0.4% from average entry for test take-profit sell
+- loss <= -0.2% from average entry for test stop-loss sell
 - Bitcoin Fear and Greed Index >= 55 for sell pressure
 - RSI(14) >= 58 on the 1-minute chart for sell pressure

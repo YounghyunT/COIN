@@ -1,6 +1,6 @@
 create table if not exists public.bot_state (
   id text primary key default 'default',
-  cash numeric not null default 10000,
+  cash numeric not null default 50000,
   btc numeric not null default 0,
   avg_entry numeric,
   equity numeric,
@@ -36,5 +36,5 @@ alter table public.bot_trades add column if not exists realized_pnl numeric;
 alter table public.bot_trades add column if not exists realized_pnl_pct numeric;
 
 insert into public.bot_state (id, cash, btc)
-values ('default', 10000, 0)
+values ('default', 50000, 0)
 on conflict (id) do nothing;
