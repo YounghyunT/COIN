@@ -13,8 +13,17 @@ CRON_SECRET=long-random-string
 ```
 
 4. Deploy to Vercel.
-5. Vercel Cron will call `/api/bot-tick` every 15 minutes.
-6. The dashboard reads persisted bot state from `/api/bot-state`.
+5. Add these GitHub repository secrets:
+
+```text
+BOT_TICK_URL=https://your-vercel-domain.vercel.app/api/bot-tick
+CRON_SECRET=the-same-long-random-string-used-in-vercel
+```
+
+6. GitHub Actions will call `/api/bot-tick` every 15 minutes.
+7. The dashboard reads persisted bot state from `/api/bot-state`.
+
+Vercel Hobby accounts only allow daily Vercel Cron jobs. This project uses GitHub Actions for the 15-minute bot schedule so the Vercel Hobby deployment can still succeed.
 
 The bot stores:
 
@@ -35,4 +44,3 @@ The current strategy uses:
 - loss <= -5% from average entry for stop-loss sell
 - Bitcoin Fear and Greed Index >= 70 for sell pressure
 - RSI(14) >= 70 on the 15-minute chart for sell pressure
-

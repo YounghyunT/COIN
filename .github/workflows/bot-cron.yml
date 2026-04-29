@@ -1,0 +1,19 @@
+name: BTC AI Bot Cron
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call bot tick endpoint
+        run: |
+          curl --fail --silent --show-error \
+            -X POST "$BOT_TICK_URL" \
+            -H "Authorization: Bearer $CRON_SECRET"
+        env:
+          BOT_TICK_URL: ${{ secrets.BOT_TICK_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
