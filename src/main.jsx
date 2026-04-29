@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createChart, CandlestickSeries, ColorType, CrosshairMode, LineSeries } from "lightweight-charts";
 import {
   Activity,
   Bell,
@@ -8,7 +7,6 @@ import {
   CheckCircle2,
   CircleDollarSign,
   History,
-  LineChart,
   Pause,
   Play,
   Radio,
@@ -331,79 +329,79 @@ function useMarketData() {
   return { candles, status };
 }
 
-function ChartPanel({ candles, indicators }) {
-  const chartRef = useRef(null);
-  const seriesRef = useRef({});
+function TradingViewChart() {
+  const containerRef = useRef(null);
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
-    if (!chartRef.current) return undefined;
+    if (!containerRef.current) return undefined;
+    setBlocked(false);
 
-    const chart = createChart(chartRef.current, {
-      height: 430,
-      layout: {
-        background: { type: ColorType.Solid, color: "#101418" },
-        textColor: "#cbd5e1",
-      },
-      grid: {
-        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
-        horzLines: { color: "rgba(148, 163, 184, 0.08)" },
-      },
-      rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.18)" },
-      timeScale: { borderColor: "rgba(148, 163, 184, 0.18)", timeVisible: true },
-      crosshair: { mode: CrosshairMode.Normal },
+    containerRef.current.innerHTML = `
+      <div class="tradingview-widget-container__widget"></div>
+      <div class="tradingview-widget-copyright">
+        <a href="https://www.tradingview.com/symbols/BTCUSDT/?exchange=BINANCE" rel="noopener nofollow" target="_blank">
+          <span>BTCUSDT chart</span>
+        </a>
+        <span> by TradingView</span>
+      </div>
+    `;
+
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: "BINANCE:BTCUSDT",
+      interval: "15",
+      timezone: "Asia/Seoul",
+      theme: "dark",
+      backgroundColor: "rgba(16, 20, 24, 1)",
+      style: "1",
+      locale: "kr",
+      allow_symbol_change: true,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+      withdateranges: true,
+      hide_side_toolbar: false,
+      save_image: true,
+      details: true,
+      hotlist: false,
+      studies: ["MASimple@tv-basicstudies", "RSI@tv-basicstudies", "MACD@tv-basicstudies"],
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-    });
-    const emaFast = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 2 });
-    const emaSlow = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2 });
-    const upper = chart.addSeries(LineSeries, { color: "rgba(168, 85, 247, 0.75)", lineWidth: 1 });
-    const lower = chart.addSeries(LineSeries, { color: "rgba(168, 85, 247, 0.75)", lineWidth: 1 });
-
-    seriesRef.current = { chart, candleSeries, emaFast, emaSlow, upper, lower };
-
-    const resize = () => {
-      chart.applyOptions({ width: chartRef.current.clientWidth });
-    };
-    resize();
-    window.addEventListener("resize", resize);
+    containerRef.current.appendChild(script);
+    const fallbackTimer = window.setTimeout(() => {
+      if (!containerRef.current?.querySelector("iframe")) {
+        setBlocked(true);
+      }
+    }, 5000);
 
     return () => {
-      window.removeEventListener("resize", resize);
-      chart.remove();
+      window.clearTimeout(fallbackTimer);
+      if (containerRef.current) containerRef.current.innerHTML = "";
     };
   }, []);
 
-  useEffect(() => {
-    const { candleSeries, emaFast, emaSlow, upper, lower, chart } = seriesRef.current;
-    if (!candleSeries || candles.length === 0) return;
-
-    candleSeries.setData(candles);
-    emaFast.setData(
-      indicators.emaFast.map((value, index) => ({ time: candles[index].time, value })).filter((item) => item.value),
-    );
-    emaSlow.setData(
-      indicators.emaSlow.map((value, index) => ({ time: candles[index].time, value })).filter((item) => item.value),
-    );
-    upper.setData(
-      indicators.bollinger
-        .map((value, index) => (value ? { time: candles[index].time, value: value.upper } : null))
-        .filter(Boolean),
-    );
-    lower.setData(
-      indicators.bollinger
-        .map((value, index) => (value ? { time: candles[index].time, value: value.lower } : null))
-        .filter(Boolean),
-    );
-    chart.timeScale().fitContent();
-  }, [candles, indicators]);
-
-  return <div ref={chartRef} className="h-[430px] w-full" />;
+  return (
+    <div className="tradingview-shell-wrap">
+      <div className="tradingview-shell" ref={containerRef}>
+        <div className="chart-loading">TradingView 차트를 불러오는 중</div>
+      </div>
+      {blocked ? (
+        <div className="widget-fallback">
+          <div>
+            <div className="text-sm font-semibold text-slate-100">TradingView 위젯 로드가 지연되고 있습니다.</div>
+            <div className="mt-1 text-xs text-slate-400">일부 로컬 브라우저에서는 외부 위젯 스크립트가 차단될 수 있습니다.</div>
+          </div>
+          <a href="https://www.tradingview.com/chart/?symbol=BINANCE%3ABTCUSDT" target="_blank" rel="noreferrer">
+            TradingView 열기
+          </a>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function IndicatorCard({ title, value, caption, tone }) {
@@ -561,7 +559,13 @@ function App() {
               <Radio size={16} />
               {status.source} BTCUSDT 1m
             </div>
-            <h1>BTC Signal Lab</h1>
+            <div className="site-name">수학머리와 정보몸통</div>
+            <h1>수학정보융합 비트코인 자동매매</h1>
+            <div className="taglines">
+              <span>규칙은 단 하나, 욕심 부리지말고 프로그램을 믿을 것.</span>
+              <span>데이터는 거짓말을 하지 않는다.</span>
+            </div>
+            <div className="lab-name">[Y & K] BTC Signal Lab</div>
           </div>
           <div className={`connection ${status.mode}`}>
             <span />
@@ -581,7 +585,7 @@ function App() {
                 {signal.label}
               </div>
             </div>
-            <ChartPanel candles={candles} indicators={indicators} />
+            <TradingViewChart />
           </div>
 
           <aside className="flex flex-col gap-4">

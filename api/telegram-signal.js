@@ -15,7 +15,7 @@ export default async function handler(request, response) {
   try {
     const { signal, price, reason, timestamp } = request.body ?? {};
     const text = [
-      `BTC Signal Lab: ${signal ?? "NEUTRAL"}`,
+      `[Y & K] BTC Signal Lab: ${signal ?? "NEUTRAL"}`,
       price ? `Price: ${Number(price).toLocaleString("en-US")} USDT` : null,
       reason ? `Reason: ${reason}` : null,
       timestamp ? `Time: ${timestamp}` : null,

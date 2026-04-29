@@ -1,4 +1,4 @@
-# BTC Signal Lab
+# [Y & K] BTC Signal Lab
 
 React + Tailwind 기반의 비트코인 신호 대시보드입니다. Binance BTCUSDT 1분봉을 실시간으로 받아 차트, EMA, RSI, MACD, Bollinger Band를 보여주고, 규칙 기반 매수/매도 관심 신호와 모의투자 섹션을 제공합니다.
 
