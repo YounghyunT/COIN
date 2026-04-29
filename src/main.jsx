@@ -319,10 +319,10 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
   }
 
   if (pnl !== null) {
-    if (pnl >= 0.3) {
+    if (pnl >= 0.1) {
       sellScore += 4;
       sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 테스트 익절`);
-    } else if (pnl <= -0.3) {
+    } else if (pnl <= -0.1) {
       sellScore += 4;
       sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 테스트 손절`);
     } else {
@@ -332,7 +332,7 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
     sellReasons.push("보유 포지션 없음");
   }
 
-  if (entryPrice && sellScore >= 2) {
+  if (entryPrice && sellScore >= 1) {
     return { side: "SELL", label: "공격 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
@@ -1114,7 +1114,7 @@ function AiBotPanel({ botState }) {
         <IndicatorCard title="총 평가금" value={state ? `$${formatUsd(equity)}` : "--"} caption="DB 저장 계좌" />
         <IndicatorCard title="보유 현금" value={state ? `$${formatUsd(cash)}` : "--"} caption="가상 USDT" />
         <IndicatorCard title="보유 BTC" value={state ? btc.toFixed(6) : "--"} caption="AI봇 수량" />
-        <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="테스트 익절 +0.3% / 손절 -0.3%" />
+        <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="테스트 익절 +0.1% / 손절 -0.1%" />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellTrades.length}회 청산 기준`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
@@ -1249,7 +1249,7 @@ function App() {
                 <IndicatorCard title="전략 점수" value={alertSignal.score.toFixed(1)} caption={alertStatus.message} />
                 <IndicatorCard title="공포·탐욕" value={fearGreed.value ?? "--"} caption={`${fearGreed.label} · ${fearGreed.status}`} />
                 <IndicatorCard title="20일선 대비" value={ma20Gap !== null ? `${ma20Gap >= 0 ? "+" : ""}${ma20Gap.toFixed(1)}%` : "--"} caption={dailyMa20 ? `MA20 $${formatUsd(dailyMa20, 0)}` : "계산 중"} />
-                <IndicatorCard title="평균 매수가" value={botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"} caption={botEntryPrice ? "테스트 익절 +0.3% / 손절 -0.3%" : "보유 포지션 없음"} />
+                <IndicatorCard title="평균 매수가" value={botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"} caption={botEntryPrice ? "테스트 익절 +0.1% / 손절 -0.1%" : "보유 포지션 없음"} />
               </div>
             </section>
             <TelegramPanel signal={alertSignal} lastPrice={alertLast?.close} signalTime={alertLast?.time} trend={trendFilter} />

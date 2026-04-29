@@ -103,10 +103,10 @@ function buildStrategySignal({ alertCandles, dailyCandles, fearGreed, entryPrice
   }
 
   if (pnl !== null) {
-    if (pnl >= 0.3) {
+    if (pnl >= 0.1) {
       sellScore += 4;
       sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 테스트 익절`);
-    } else if (pnl <= -0.3) {
+    } else if (pnl <= -0.1) {
       sellScore += 4;
       sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 테스트 손절`);
     } else {
@@ -116,7 +116,7 @@ function buildStrategySignal({ alertCandles, dailyCandles, fearGreed, entryPrice
     sellReasons.push("보유 포지션 없음");
   }
 
-  if (entryPrice && sellScore >= 2) {
+  if (entryPrice && sellScore >= 1) {
     return { side: "SELL", label: "공격 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
