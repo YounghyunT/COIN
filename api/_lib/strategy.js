@@ -1,7 +1,18 @@
 import { fetchCandles, fetchFearGreedIndex, rsi, sma } from "./market.js";
 
 const INITIAL_CASH = 10000;
-const POSITION_SIZE = 0.5;
+
+function positionPctFromSignal(score, side) {
+  if (side === "BUY") {
+    if (score >= 7) return 0.7;
+    if (score >= 5) return 0.55;
+    return 0.35;
+  }
+
+  if (score >= 6) return 1;
+  if (score >= 4) return 0.75;
+  return 0.5;
+}
 
 function ema(values, period) {
   if (values.length === 0) return [];
@@ -170,23 +181,60 @@ export async function evaluateBot(previousState) {
   let trade = null;
 
   if (!alreadyProcessed && signal.side === "BUY" && nextState.cash > 0) {
-    const equity = nextState.cash + nextState.btc * price;
-    const spend = Math.min(nextState.cash, equity * POSITION_SIZE);
+    const equityBefore = nextState.cash + nextState.btc * price;
+    const positionPct = positionPctFromSignal(signal.score, "BUY");
+    const spend = Math.min(nextState.cash, equityBefore * positionPct);
     const amount = spend / price;
     const nextBtc = nextState.btc + amount;
+    const avgEntryBefore = nextState.avg_entry;
     nextState.avg_entry = ((nextState.avg_entry || 0) * nextState.btc + spend) / nextBtc;
     nextState.cash -= spend;
     nextState.btc = nextBtc;
-    trade = { side: "BUY", price, amount, cash_delta: -spend, reason: signal.reason, candle_time: last.time };
+    trade = {
+      side: "BUY",
+      price,
+      amount,
+      cash_delta: -spend,
+      position_pct: positionPct,
+      equity_before: equityBefore,
+      equity_after: nextState.cash + nextState.btc * price,
+      avg_entry_before: avgEntryBefore,
+      realized_pnl: null,
+      realized_pnl_pct: null,
+      reason: signal.reason,
+      candle_time: last.time,
+    };
   }
 
   if (!alreadyProcessed && signal.side === "SELL" && nextState.btc > 0) {
-    const amount = nextState.btc;
+    const equityBefore = nextState.cash + nextState.btc * price;
+    const positionPct = positionPctFromSignal(signal.score, "SELL");
+    const avgEntryBefore = nextState.avg_entry;
+    const amount = nextState.btc * positionPct;
     const proceeds = amount * price;
+    const costBasis = amount * (avgEntryBefore || price);
+    const realizedPnl = proceeds - costBasis;
+    const realizedPnlPct = avgEntryBefore ? ((price - avgEntryBefore) / avgEntryBefore) * 100 : null;
     nextState.cash += proceeds;
-    nextState.btc = 0;
-    nextState.avg_entry = null;
-    trade = { side: "SELL", price, amount, cash_delta: proceeds, reason: signal.reason, candle_time: last.time };
+    nextState.btc = Math.max(0, nextState.btc - amount);
+    if (nextState.btc <= 0.00000001) {
+      nextState.btc = 0;
+      nextState.avg_entry = null;
+    }
+    trade = {
+      side: "SELL",
+      price,
+      amount,
+      cash_delta: proceeds,
+      position_pct: positionPct,
+      equity_before: equityBefore,
+      equity_after: nextState.cash + nextState.btc * price,
+      avg_entry_before: avgEntryBefore,
+      realized_pnl: realizedPnl,
+      realized_pnl_pct: realizedPnlPct,
+      reason: signal.reason,
+      candle_time: last.time,
+    };
   }
 
   const equity = nextState.cash + nextState.btc * price;

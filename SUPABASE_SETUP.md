@@ -2,6 +2,7 @@
 
 1. Create a Supabase project.
 2. Open the Supabase SQL Editor and run `supabase/schema.sql`.
+   - If the tables already exist, run it again after updates. The `alter table ... add column if not exists` lines safely add new performance columns without deleting existing bot data.
 3. Add these environment variables in Vercel:
 
 ```text

@@ -1086,6 +1086,18 @@ function AiBotPanel({ botState }) {
   const btc = Number(state?.btc ?? 0);
   const avgEntry = state?.avg_entry ? Number(state.avg_entry) : null;
   const equity = state?.equity ? Number(state.equity) : cash;
+  const sellTrades = trades.filter((trade) => trade.side === "SELL");
+  const buyTrades = trades.filter((trade) => trade.side === "BUY");
+  const realizedPnl = sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0);
+  const wins = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) > 0).length;
+  const losses = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) < 0).length;
+  const winRate = sellTrades.length ? (wins / sellTrades.length) * 100 : null;
+  const avgSellPnlPct = sellTrades.length
+    ? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl_pct ?? 0), 0) / sellTrades.length
+    : null;
+  const lastSignal = state?.last_signal;
+  const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
+  const suggestedSellPct = lastSignal?.side === "SELL" ? (Number(lastSignal.score ?? 0) >= 6 ? 100 : Number(lastSignal.score ?? 0) >= 4 ? 75 : 50) : null;
 
   return (
     <section className="panel">
@@ -1104,9 +1116,23 @@ function AiBotPanel({ botState }) {
         <IndicatorCard title="보유 BTC" value={state ? btc.toFixed(6) : "--"} caption="AI봇 수량" />
         <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="테스트 익절 +0.3% / 손절 -0.3%" />
       </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellTrades.length}회 청산 기준`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
+        <IndicatorCard title="승률" value={winRate !== null ? `${winRate.toFixed(1)}%` : "--"} caption={`승 ${wins} / 패 ${losses}`} />
+        <IndicatorCard title="평균 청산률" value={avgSellPnlPct !== null ? `${avgSellPnlPct >= 0 ? "+" : ""}${avgSellPnlPct.toFixed(2)}%` : "--"} caption="매도 체결 평균" />
+        <IndicatorCard title="체결 횟수" value={trades.length} caption={`매수 ${buyTrades.length} / 매도 ${sellTrades.length}`} />
+      </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
         <div>마지막 실행: {state?.last_run_at ? new Date(state.last_run_at).toLocaleString() : botState.loading ? "불러오는 중" : "--"}</div>
         <div>마지막 신호: {state?.last_signal?.label ?? "--"}</div>
+        <div>
+          권장 비중:{" "}
+          {suggestedBuyPct
+            ? `매수 ${suggestedBuyPct}%`
+            : suggestedSellPct
+              ? `매도 ${suggestedSellPct}%`
+              : "대기"}
+        </div>
       </div>
       <div className="mt-5 max-h-52 overflow-auto rounded-md border border-white/10">
         {trades.length === 0 ? (
@@ -1115,9 +1141,13 @@ function AiBotPanel({ botState }) {
           trades.map((trade) => (
             <div className="trade-row" key={trade.id}>
               <span className={trade.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{trade.side}</span>
-              <span>{Number(trade.amount).toFixed(6)} BTC</span>
+              <span>{Number(trade.amount).toFixed(6)} BTC · {trade.position_pct ? `${Math.round(Number(trade.position_pct) * 100)}%` : "--"}</span>
               <span>${formatUsd(trade.price)}</span>
-              <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
+              <span className={Number(trade.realized_pnl ?? 0) >= 0 ? "text-slate-500" : "text-rose-300"}>
+                {trade.side === "SELL" && trade.realized_pnl_pct !== null && trade.realized_pnl_pct !== undefined
+                  ? `${Number(trade.realized_pnl_pct) >= 0 ? "+" : ""}${Number(trade.realized_pnl_pct).toFixed(2)}%`
+                  : new Date(trade.created_at).toLocaleTimeString()}
+              </span>
             </div>
           ))
         )}
