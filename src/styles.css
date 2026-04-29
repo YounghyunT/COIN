@@ -416,6 +416,13 @@ code {
   border-bottom: 0;
 }
 
+.ai-trades-title {
+  margin-top: 20px;
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -441,6 +448,28 @@ code {
   .trade-row {
     grid-template-columns: 48px 1fr;
     row-gap: 4px;
+  }
+
+  .ai-trade-row {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: start;
+    font-size: 0.8rem;
+  }
+
+  .ai-trade-row span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .ai-trade-row span:nth-child(3) {
+    grid-column: 2;
+    color: #cbd5e1;
+  }
+
+  .ai-trade-row span:nth-child(4),
+  .ai-trade-row span:nth-child(5) {
+    grid-column: 2;
   }
 
   .bot-status-strip {

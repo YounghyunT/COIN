@@ -1146,12 +1146,13 @@ function AiBotPanel({ botState }) {
               : "대기"}
         </div>
       </div>
-      <div className="mt-5 max-h-52 overflow-auto rounded-md border border-white/10">
+      <div className="ai-trades-title">체결현황</div>
+      <div className="mt-2 max-h-52 overflow-auto rounded-md border border-white/10">
         {trades.length === 0 ? (
           <div className="p-4 text-sm text-slate-500">아직 AI봇 체결 기록이 없습니다.</div>
         ) : (
           trades.map((trade) => (
-            <div className="trade-row" key={trade.id}>
+            <div className="trade-row ai-trade-row" key={trade.id}>
               <span className={trade.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{trade.side}</span>
               <span>{Number(trade.amount).toFixed(6)} BTC · {trade.position_pct ? `${Math.round(Number(trade.position_pct) * 100)}%` : "--"}</span>
               <span>${formatUsd(trade.price)}</span>
