@@ -1146,7 +1146,17 @@ function AiBotPanel({ botState }) {
               : "대기"}
         </div>
       </div>
-      <div className="ai-trades-title">체결현황</div>
+      <div className="ai-trades-title">
+        <div className="ai-trades-title-main">
+          <span className="ai-trades-live-dot" />
+          <History size={16} />
+          <span>체결현황</span>
+        </div>
+        <div className="ai-trades-title-meta">
+          <span>{trades.length}건 기록</span>
+          <span>풍덕자이v1.0 결과 로그</span>
+        </div>
+      </div>
       <div className="mt-2 max-h-52 overflow-auto rounded-md border border-white/10">
         {trades.length === 0 ? (
           <div className="p-4 text-sm text-slate-500">아직 AI봇 체결 기록이 없습니다.</div>

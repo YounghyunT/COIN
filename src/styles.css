@@ -417,10 +417,52 @@ code {
 }
 
 .ai-trades-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(8, 47, 73, 0.5)),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.16), rgba(59, 130, 246, 0.08));
+  padding: 11px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ai-trades-title-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: #e2e8f0;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 650;
+}
+
+.ai-trades-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12);
+}
+
+.ai-trades-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.ai-trades-title-meta span:first-child {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #bbf7d0;
+  padding: 3px 8px;
 }
 
 .check-row {
@@ -470,6 +512,19 @@ code {
   .ai-trade-row span:nth-child(4),
   .ai-trade-row span:nth-child(5) {
     grid-column: 2;
+  }
+
+  .ai-trades-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .ai-trades-title-meta {
+    flex-wrap: wrap;
+    gap: 6px;
+    white-space: normal;
   }
 
   .bot-status-strip {
