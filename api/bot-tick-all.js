@@ -1,6 +1,6 @@
+import { BOTS } from "./_lib/bots.js";
 import { evaluateBot } from "./_lib/strategy.js";
 import { getBotState, insertTrade, upsertBotState } from "./_lib/supabase-rest.js";
-import { getBotConfig } from "./_lib/bots.js";
 
 async function sendTelegram({ bot, signal, price, trade }) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -40,6 +40,23 @@ function isAuthorized(request) {
   return auth === `Bearer ${secret}` || querySecret === secret || cronHeader === "1";
 }
 
+async function runBot(bot) {
+  const previousState = await getBotState(bot.id);
+  const result = await evaluateBot(previousState, bot);
+  const state = await upsertBotState(result.state, bot.id);
+  const trade = await insertTrade(result.trade, bot.id);
+  const telegram = await sendTelegram({ bot, signal: result.signal, price: result.price, trade });
+
+  return {
+    bot,
+    alreadyProcessed: result.alreadyProcessed,
+    signal: result.signal,
+    state,
+    trade,
+    telegram,
+  };
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") {
     response.status(405).json({ ok: false, error: "Method not allowed" });
@@ -52,22 +69,12 @@ export default async function handler(request, response) {
   }
 
   try {
-    const bot = getBotConfig(request.query?.bot);
-    const previousState = await getBotState(bot.id);
-    const result = await evaluateBot(previousState, bot);
-    const state = await upsertBotState(result.state, bot.id);
-    const trade = await insertTrade(result.trade, bot.id);
-    const telegram = await sendTelegram({ bot, signal: result.signal, price: result.price, trade });
+    const results = [];
+    for (const bot of BOTS) {
+      results.push(await runBot(bot));
+    }
 
-    response.status(200).json({
-      ok: true,
-      bot,
-      alreadyProcessed: result.alreadyProcessed,
-      signal: result.signal,
-      state,
-      trade,
-      telegram,
-    });
+    response.status(200).json({ ok: true, results });
   } catch (error) {
     response.status(500).json({ ok: false, error: error.message });
   }

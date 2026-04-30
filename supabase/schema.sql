@@ -35,6 +35,10 @@ alter table public.bot_trades add column if not exists avg_entry_before numeric;
 alter table public.bot_trades add column if not exists realized_pnl numeric;
 alter table public.bot_trades add column if not exists realized_pnl_pct numeric;
 
-insert into public.bot_state (id, cash, btc)
-values ('default', 50000, 0)
+insert into public.bot_state (id, cash, btc, equity)
+values ('poongdeok-xi-v1', 50000, 0, 50000)
+on conflict (id) do nothing;
+
+insert into public.bot_state (id, cash, btc, equity)
+values ('gagok-daegwang-v1', 50000, 0, 50000)
 on conflict (id) do nothing;

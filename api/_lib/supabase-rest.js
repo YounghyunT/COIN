@@ -1,4 +1,4 @@
-const BOT_ID = "default";
+import { DEFAULT_BOT_ID } from "./bots.js";
 
 function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL;
@@ -33,40 +33,42 @@ async function supabaseFetch(path, options = {}) {
   return response.json();
 }
 
-export async function getBotState() {
-  const rows = await supabaseFetch(`/bot_state?id=eq.${BOT_ID}&select=*&limit=1`);
+const botFilter = (botId = DEFAULT_BOT_ID) => encodeURIComponent(botId);
+
+export async function getBotState(botId = DEFAULT_BOT_ID) {
+  const rows = await supabaseFetch(`/bot_state?id=eq.${botFilter(botId)}&select=*&limit=1`);
   return rows?.[0] ?? null;
 }
 
-export async function upsertBotState(state) {
+export async function upsertBotState(state, botId = DEFAULT_BOT_ID) {
   const rows = await supabaseFetch("/bot_state?on_conflict=id", {
     method: "POST",
     headers: {
       Prefer: "resolution=merge-duplicates,return=representation",
     },
-    body: JSON.stringify([{ ...state, id: BOT_ID }]),
+    body: JSON.stringify([{ ...state, id: botId }]),
   });
   return rows?.[0] ?? null;
 }
 
-export async function insertTrade(trade) {
+export async function insertTrade(trade, botId = DEFAULT_BOT_ID) {
   if (!trade) return null;
   const rows = await supabaseFetch("/bot_trades", {
     method: "POST",
     headers: {
       Prefer: "return=representation",
     },
-    body: JSON.stringify([{ ...trade, bot_id: BOT_ID }]),
+    body: JSON.stringify([{ ...trade, bot_id: botId }]),
   });
   return rows?.[0] ?? null;
 }
 
-export async function getRecentTrades(limit = 20) {
-  return supabaseFetch(`/bot_trades?bot_id=eq.${BOT_ID}&select=*&order=created_at.desc&limit=${limit}`);
+export async function getRecentTrades(limit = 20, botId = DEFAULT_BOT_ID) {
+  return supabaseFetch(`/bot_trades?bot_id=eq.${botFilter(botId)}&select=*&order=created_at.desc&limit=${limit}`);
 }
 
-export async function getTradeCount() {
-  const response = await supabaseRequest(`/bot_trades?bot_id=eq.${BOT_ID}&select=id&limit=1`, {
+export async function getTradeCount(botId = DEFAULT_BOT_ID) {
+  const response = await supabaseRequest(`/bot_trades?bot_id=eq.${botFilter(botId)}&select=id&limit=1`, {
     headers: {
       Prefer: "count=exact",
     },
@@ -76,14 +78,14 @@ export async function getTradeCount() {
   return Number.isFinite(count) ? count : 0;
 }
 
-export async function getTradeStats() {
+export async function getTradeStats(botId = DEFAULT_BOT_ID) {
   const pageSize = 1000;
   let offset = 0;
   const sellTrades = [];
 
   while (true) {
     const rows = await supabaseFetch(
-      `/bot_trades?bot_id=eq.${BOT_ID}&side=eq.SELL&select=realized_pnl,realized_pnl_pct&order=id.asc&limit=${pageSize}&offset=${offset}`,
+      `/bot_trades?bot_id=eq.${botFilter(botId)}&side=eq.SELL&select=realized_pnl,realized_pnl_pct&order=id.asc&limit=${pageSize}&offset=${offset}`,
     );
     sellTrades.push(...(rows ?? []));
     if (!rows || rows.length < pageSize) break;

@@ -45,6 +45,36 @@ const DAILY_FILTER_INTERVAL = "1d";
 const FEAR_GREED_ENDPOINT = "https://api.alternative.me/fng/?limit=1";
 const LONG_HISTORY_START = Date.UTC(2023, 0, 1);
 const BINANCE_LIMIT = 1000;
+const INITIAL_BOT_CASH = 50000;
+
+const BOT_PROFILES = [
+  {
+    id: "poongdeok-xi-v1",
+    name: "풍덕자이v1.0",
+    status: "운영 중",
+    interval: "1분봉",
+    style: "공격형 단기 테스트",
+    helper: "현재 Supabase에 기록 중인 실시간 모의투자 봇",
+    ruleCards: [
+      ["봇 판단 기준", "1분봉", "RSI(14) · EMA 9/21 · 단기 모멘텀"],
+      ["보조 판단", "1일봉 MA20", "공포·탐욕 지수와 20일선 괴리율 반영"],
+      ["테스트 청산", "3분할 매도", "익절 +0.4% / 손절 -0.2% 발생 시 보유량을 세 번에 나눠 정리"],
+    ],
+  },
+  {
+    id: "gagok-daegwang-v1",
+    name: "가곡대광v1.0",
+    status: "운영 준비",
+    interval: "15분봉",
+    style: "안정형 추세 확인",
+    helper: "별도 bot_id로 기록되는 15분봉 모의투자 봇",
+    ruleCards: [
+      ["봇 판단 기준", "15분봉 완성봉", "RSI(14) · 볼린저밴드 평균회귀"],
+      ["보조 판단", "EMA 20/60", "15분봉 추세 훼손 구간 진입 억제"],
+      ["청산 설계", "+1.3% / -0.7%", "익절 또는 손절 조건 도달 시 전량 청산"],
+    ],
+  },
+];
 
 const formatUsd = (value, digits = 2) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -602,7 +632,7 @@ function useFearGreedIndex() {
   return fearGreed;
 }
 
-function useBotState() {
+function useBotState(botId) {
   const [botState, setBotState] = useState({
     loading: true,
     error: null,
@@ -614,16 +644,18 @@ function useBotState() {
 
   useEffect(() => {
     let cancelled = false;
+    setBotState((current) => ({ ...current, loading: true, error: null }));
 
     async function loadBotState() {
       try {
-        const response = await fetch("/api/bot-state");
+        const response = await fetch(`/api/bot-state?bot=${encodeURIComponent(botId)}`);
         if (!response.ok) throw new Error("봇 상태 API 응답 실패");
         const payload = await response.json();
         if (!cancelled) {
           setBotState({
             loading: false,
             error: null,
+            bot: payload.bot,
             state: payload.state,
             trades: payload.trades ?? [],
             tradeCount: payload.tradeCount ?? payload.trades?.length ?? 0,
@@ -648,7 +680,7 @@ function useBotState() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [botId]);
 
   return botState;
 }
@@ -1083,7 +1115,8 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
   );
 }
 
-function AiBotPanel({ botState }) {
+function AiBotPanel({ botState, selectedBotId, onBotChange }) {
+  const activeBot = BOT_PROFILES.find((bot) => bot.id === selectedBotId) ?? BOT_PROFILES[0];
   const state = botState.state;
   const trades = botState.trades ?? [];
   const tradeCount = Number(botState.tradeCount ?? trades.length);
@@ -1092,7 +1125,7 @@ function AiBotPanel({ botState }) {
   const btc = Number(state?.btc ?? 0);
   const avgEntry = state?.avg_entry ? Number(state.avg_entry) : null;
   const equity = state?.equity ? Number(state.equity) : cash;
-  const totalPnl = equity - 50000;
+  const totalPnl = equity - INITIAL_BOT_CASH;
   const sellTrades = trades.filter((trade) => trade.side === "SELL");
   const buyTrades = trades.filter((trade) => trade.side === "BUY");
   const realizedPnl = Number(tradeStats?.realizedPnl ?? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0));
@@ -1106,19 +1139,33 @@ function AiBotPanel({ botState }) {
   const lastSignal = state?.last_signal;
   const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
   const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
-  const suggestedSellPct = lastSignal?.side === "SELL" ? 33 : null;
+  const suggestedSellPct = lastSignal?.side === "SELL" ? (activeBot.id === "gagok-daegwang-v1" ? 100 : 33) : null;
+  const displayBuyPct = activeBot.id === "gagok-daegwang-v1" && suggestedBuyPct ? 98 : suggestedBuyPct;
 
   return (
     <section className="panel">
       <div className="section-title">
         <Bot size={18} />
-        <span>풍덕자이v1.0</span>
+        <span>AI봇 모의투자</span>
+      </div>
+      <div className="bot-switcher" role="tablist" aria-label="AI bot selector">
+        {BOT_PROFILES.map((bot) => (
+          <button
+            className={`bot-switch ${bot.id === activeBot.id ? "active" : ""}`}
+            key={bot.id}
+            onClick={() => onBotChange(bot.id)}
+            type="button"
+          >
+            <span>{bot.name}</span>
+            <small>{bot.interval} · {bot.status}</small>
+          </button>
+        ))}
       </div>
       <div className="bot-status-strip">
         <div className="bot-pulse" />
         <div>
-          <div className="text-sm font-semibold text-slate-100">자동 시뮬레이션 가동 중</div>
-          <div className="text-xs text-slate-500">cron-jobs가 봇을 깨우고 Supabase에 체결 상태를 기록합니다.</div>
+          <div className="text-sm font-semibold text-slate-100">{activeBot.name} · {activeBot.style}</div>
+          <div className="text-xs text-slate-500">{botState.loading ? "봇 데이터를 동기화하는 중입니다." : activeBot.helper}</div>
         </div>
         <div className="bot-status-meta">
           <span>최근 동기화</span>
@@ -1147,29 +1194,21 @@ function AiBotPanel({ botState }) {
         <div>마지막 신호: {state?.last_signal?.label ?? "--"}</div>
         <div>
           권장 비중:{" "}
-          {suggestedBuyPct
-            ? `매수 ${suggestedBuyPct}%`
+          {displayBuyPct
+            ? `매수 ${displayBuyPct}%`
             : suggestedSellPct
               ? `매도 ${suggestedSellPct}%`
             : "대기"}
         </div>
       </div>
       <div className="bot-rule-board">
-        <div className="bot-rule-card">
-          <span>봇 판단 기준</span>
-          <strong>1분봉</strong>
-          <small>RSI(14) · EMA 9/21 · 단기 모멘텀</small>
-        </div>
-        <div className="bot-rule-card">
-          <span>보조 판단</span>
-          <strong>1일봉 MA20</strong>
-          <small>공포·탐욕 지수와 20일선 괴리율 반영</small>
-        </div>
-        <div className="bot-rule-card">
-          <span>테스트 청산</span>
-          <strong>3분할 매도</strong>
-          <small>익절 +0.4% / 손절 -0.2% 발생 시 보유량을 세 번에 나눠 정리</small>
-        </div>
+        {activeBot.ruleCards.map(([label, value, caption]) => (
+          <div className="bot-rule-card" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+            <small>{caption}</small>
+          </div>
+        ))}
         <div className="bot-rule-card">
           <span>최근 점수</span>
           <strong>{lastSignal?.score !== undefined ? Number(lastSignal.score).toFixed(1) : "--"}</strong>
@@ -1184,12 +1223,14 @@ function AiBotPanel({ botState }) {
         </div>
         <div className="ai-trades-title-meta">
           <span>{tradeCount}건 기록</span>
-          <span>풍덕자이v1.0 결과 로그</span>
+          <span>{activeBot.name} 결과 로그</span>
         </div>
       </div>
       <div className="mt-2 max-h-52 overflow-auto rounded-md border border-white/10">
         {trades.length === 0 ? (
-          <div className="p-4 text-sm text-slate-500">아직 AI봇 체결 기록이 없습니다.</div>
+          <div className="p-4 text-sm text-slate-500">
+            아직 {activeBot.name} 체결 기록이 없습니다.
+          </div>
         ) : (
           trades.map((trade) => (
             <div className="trade-row ai-trade-row" key={trade.id}>
@@ -1216,7 +1257,8 @@ function AiBotPanel({ botState }) {
 
 function App() {
   const [interval, setInterval] = useState("1d");
-  const botState = useBotState();
+  const [selectedBotId, setSelectedBotId] = useState(BOT_PROFILES[0].id);
+  const botState = useBotState(selectedBotId);
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
   const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
@@ -1332,7 +1374,7 @@ function App() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <AiBotPanel botState={botState} />
+          <AiBotPanel botState={botState} selectedBotId={selectedBotId} onBotChange={setSelectedBotId} />
           <section className="panel">
             <div className="section-title">
               <Settings2 size={18} />

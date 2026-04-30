@@ -1,5 +1,5 @@
 delete from public.bot_trades
-where bot_id = 'default';
+where bot_id in ('poongdeok-xi-v1', 'gagok-daegwang-v1');
 
 insert into public.bot_state (
   id,
@@ -13,7 +13,18 @@ insert into public.bot_state (
   updated_at
 )
 values (
-  'default',
+  'poongdeok-xi-v1',
+  50000,
+  0,
+  null,
+  50000,
+  null,
+  null,
+  null,
+  now()
+),
+(
+  'gagok-daegwang-v1',
   50000,
   0,
   null,
