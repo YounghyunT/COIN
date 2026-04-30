@@ -609,6 +609,7 @@ function useBotState() {
     state: null,
     trades: [],
     tradeCount: 0,
+    tradeStats: null,
   });
 
   useEffect(() => {
@@ -626,6 +627,7 @@ function useBotState() {
             state: payload.state,
             trades: payload.trades ?? [],
             tradeCount: payload.tradeCount ?? payload.trades?.length ?? 0,
+            tradeStats: payload.tradeStats ?? null,
           });
         }
       } catch (error) {
@@ -1085,19 +1087,22 @@ function AiBotPanel({ botState }) {
   const state = botState.state;
   const trades = botState.trades ?? [];
   const tradeCount = Number(botState.tradeCount ?? trades.length);
+  const tradeStats = botState.tradeStats;
   const cash = Number(state?.cash ?? 0);
   const btc = Number(state?.btc ?? 0);
   const avgEntry = state?.avg_entry ? Number(state.avg_entry) : null;
   const equity = state?.equity ? Number(state.equity) : cash;
+  const totalPnl = equity - 50000;
   const sellTrades = trades.filter((trade) => trade.side === "SELL");
   const buyTrades = trades.filter((trade) => trade.side === "BUY");
-  const realizedPnl = sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0);
-  const wins = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) > 0).length;
-  const losses = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) < 0).length;
-  const winRate = sellTrades.length ? (wins / sellTrades.length) * 100 : null;
-  const avgSellPnlPct = sellTrades.length
+  const realizedPnl = Number(tradeStats?.realizedPnl ?? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0));
+  const wins = Number(tradeStats?.wins ?? sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) > 0).length);
+  const losses = Number(tradeStats?.losses ?? sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) < 0).length);
+  const sellCount = Number(tradeStats?.sellCount ?? sellTrades.length);
+  const winRate = tradeStats?.winRate ?? (sellTrades.length ? (wins / sellTrades.length) * 100 : null);
+  const avgSellPnlPct = tradeStats?.avgSellPnlPct ?? (sellTrades.length
     ? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl_pct ?? 0), 0) / sellTrades.length
-    : null;
+    : null);
   const lastSignal = state?.last_signal;
   const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
   const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
@@ -1126,13 +1131,13 @@ function AiBotPanel({ botState }) {
         </div>
       ) : null}
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <IndicatorCard title="총 평가금" value={state ? `$${formatUsd(equity)}` : "--"} caption="DB 저장 계좌" />
+        <IndicatorCard title="총 평가금" value={state ? `$${formatUsd(equity)}` : "--"} caption={state ? `총손익 ${totalPnl >= 0 ? "+" : ""}$${formatUsd(totalPnl)}` : "DB 저장 계좌"} />
         <IndicatorCard title="보유 현금" value={state ? `$${formatUsd(cash)}` : "--"} caption="가상 USDT" />
         <IndicatorCard title="보유 BTC" value={state ? btc.toFixed(6) : "--"} caption="AI봇 수량" />
         <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="테스트 익절 +0.4% / 손절 -0.2%" />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellTrades.length}회 청산 기준`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
+        <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellCount}회 청산 기준 · 미실현 제외`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
         <IndicatorCard title="승률" value={winRate !== null ? `${winRate.toFixed(1)}%` : "--"} caption={`승 ${wins} / 패 ${losses}`} />
         <IndicatorCard title="평균 청산률" value={avgSellPnlPct !== null ? `${avgSellPnlPct >= 0 ? "+" : ""}${avgSellPnlPct.toFixed(2)}%` : "--"} caption="매도 체결 평균" />
         <IndicatorCard title="체결 횟수" value={tradeCount} caption={`최근 ${trades.length}건 표시 중`} />

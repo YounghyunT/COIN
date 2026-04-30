@@ -75,3 +75,34 @@ export async function getTradeCount() {
   const count = Number(contentRange?.split("/")?.[1]);
   return Number.isFinite(count) ? count : 0;
 }
+
+export async function getTradeStats() {
+  const pageSize = 1000;
+  let offset = 0;
+  const sellTrades = [];
+
+  while (true) {
+    const rows = await supabaseFetch(
+      `/bot_trades?bot_id=eq.${BOT_ID}&side=eq.SELL&select=realized_pnl,realized_pnl_pct&order=id.asc&limit=${pageSize}&offset=${offset}`,
+    );
+    sellTrades.push(...(rows ?? []));
+    if (!rows || rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  const realizedPnl = sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0);
+  const wins = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) > 0).length;
+  const losses = sellTrades.filter((trade) => Number(trade.realized_pnl ?? 0) < 0).length;
+  const avgSellPnlPct = sellTrades.length
+    ? sellTrades.reduce((sum, trade) => sum + Number(trade.realized_pnl_pct ?? 0), 0) / sellTrades.length
+    : null;
+
+  return {
+    realizedPnl,
+    wins,
+    losses,
+    sellCount: sellTrades.length,
+    winRate: sellTrades.length ? (wins / sellTrades.length) * 100 : null,
+    avgSellPnlPct,
+  };
+}
