@@ -608,6 +608,7 @@ function useBotState() {
     error: null,
     state: null,
     trades: [],
+    tradeCount: 0,
   });
 
   useEffect(() => {
@@ -624,6 +625,7 @@ function useBotState() {
             error: null,
             state: payload.state,
             trades: payload.trades ?? [],
+            tradeCount: payload.tradeCount ?? payload.trades?.length ?? 0,
           });
         }
       } catch (error) {
@@ -1082,6 +1084,7 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
 function AiBotPanel({ botState }) {
   const state = botState.state;
   const trades = botState.trades ?? [];
+  const tradeCount = Number(botState.tradeCount ?? trades.length);
   const cash = Number(state?.cash ?? 0);
   const btc = Number(state?.btc ?? 0);
   const avgEntry = state?.avg_entry ? Number(state.avg_entry) : null;
@@ -1132,7 +1135,7 @@ function AiBotPanel({ botState }) {
         <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellTrades.length}회 청산 기준`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
         <IndicatorCard title="승률" value={winRate !== null ? `${winRate.toFixed(1)}%` : "--"} caption={`승 ${wins} / 패 ${losses}`} />
         <IndicatorCard title="평균 청산률" value={avgSellPnlPct !== null ? `${avgSellPnlPct >= 0 ? "+" : ""}${avgSellPnlPct.toFixed(2)}%` : "--"} caption="매도 체결 평균" />
-        <IndicatorCard title="체결 횟수" value={trades.length} caption={`매수 ${buyTrades.length} / 매도 ${sellTrades.length}`} />
+        <IndicatorCard title="체결 횟수" value={tradeCount} caption={`최근 ${trades.length}건 표시 중`} />
       </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
         <div>마지막 실행: {state?.last_run_at ? new Date(state.last_run_at).toLocaleString() : botState.loading ? "불러오는 중" : "--"}</div>
@@ -1153,7 +1156,7 @@ function AiBotPanel({ botState }) {
           <span>체결현황</span>
         </div>
         <div className="ai-trades-title-meta">
-          <span>{trades.length}건 기록</span>
+          <span>{tradeCount}건 기록</span>
           <span>풍덕자이v1.0 결과 로그</span>
         </div>
       </div>

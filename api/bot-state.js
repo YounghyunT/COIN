@@ -1,4 +1,4 @@
-import { getBotState, getRecentTrades } from "./_lib/supabase-rest.js";
+import { getBotState, getRecentTrades, getTradeCount } from "./_lib/supabase-rest.js";
 
 export default async function handler(request, response) {
   if (request.method !== "GET") {
@@ -7,8 +7,8 @@ export default async function handler(request, response) {
   }
 
   try {
-    const [state, trades] = await Promise.all([getBotState(), getRecentTrades(200)]);
-    response.status(200).json({ ok: true, state, trades });
+    const [state, trades, tradeCount] = await Promise.all([getBotState(), getRecentTrades(200), getTradeCount()]);
+    response.status(200).json({ ok: true, state, trades, tradeCount });
   } catch (error) {
     response.status(500).json({ ok: false, error: error.message });
   }

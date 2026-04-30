@@ -7,7 +7,7 @@ function getSupabaseConfig() {
   return { url: url.replace(/\/$/, ""), key };
 }
 
-async function supabaseFetch(path, options = {}) {
+async function supabaseRequest(path, options = {}) {
   const { url, key } = getSupabaseConfig();
   const response = await fetch(`${url}/rest/v1${path}`, {
     ...options,
@@ -24,6 +24,11 @@ async function supabaseFetch(path, options = {}) {
     throw new Error(`Supabase ${response.status}: ${text}`);
   }
 
+  return response;
+}
+
+async function supabaseFetch(path, options = {}) {
+  const response = await supabaseRequest(path, options);
   if (response.status === 204) return null;
   return response.json();
 }
@@ -60,3 +65,13 @@ export async function getRecentTrades(limit = 20) {
   return supabaseFetch(`/bot_trades?bot_id=eq.${BOT_ID}&select=*&order=created_at.desc&limit=${limit}`);
 }
 
+export async function getTradeCount() {
+  const response = await supabaseRequest(`/bot_trades?bot_id=eq.${BOT_ID}&select=id&limit=1`, {
+    headers: {
+      Prefer: "count=exact",
+    },
+  });
+  const contentRange = response.headers.get("content-range");
+  const count = Number(contentRange?.split("/")?.[1]);
+  return Number.isFinite(count) ? count : 0;
+}
