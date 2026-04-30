@@ -1101,7 +1101,7 @@ function AiBotPanel({ botState }) {
   const lastSignal = state?.last_signal;
   const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
   const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
-  const suggestedSellPct = lastSignal?.side === "SELL" ? (Number(lastSignal.score ?? 0) >= 6 ? 100 : Number(lastSignal.score ?? 0) >= 4 ? 75 : 50) : null;
+  const suggestedSellPct = lastSignal?.side === "SELL" ? 33 : null;
 
   return (
     <section className="panel">
@@ -1162,8 +1162,8 @@ function AiBotPanel({ botState }) {
         </div>
         <div className="bot-rule-card">
           <span>테스트 청산</span>
-          <strong>+0.4% / -0.2%</strong>
-          <small>익절과 손절을 공격적으로 검증</small>
+          <strong>3분할 매도</strong>
+          <small>익절 +0.4% / 손절 -0.2% 발생 시 보유량을 세 번에 나눠 정리</small>
         </div>
         <div className="bot-rule-card">
           <span>최근 점수</span>

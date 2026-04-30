@@ -1,6 +1,8 @@
 import { fetchCandles, fetchFearGreedIndex, rsi, sma } from "./market.js";
 
 const INITIAL_CASH = 50000;
+const SELL_SPLIT_PARTS = 3;
+const BTC_DUST = 0.00000001;
 
 function positionPctFromSignal(score, side) {
   if (side === "BUY") {
@@ -9,9 +11,27 @@ function positionPctFromSignal(score, side) {
     return 0.35;
   }
 
-  if (score >= 6) return 1;
-  if (score >= 4) return 0.75;
-  return 0.5;
+  return 1 / SELL_SPLIT_PARTS;
+}
+
+function getActiveExitPlan(state, currentBtc) {
+  const previousPlan = state?.last_signal?.exitPlan;
+  if (
+    previousPlan &&
+    Number(previousPlan.baseBtc) > 0 &&
+    Number(previousPlan.remainingParts) > 0 &&
+    Number(currentBtc) > BTC_DUST
+  ) {
+    return {
+      baseBtc: Number(previousPlan.baseBtc),
+      remainingParts: Number(previousPlan.remainingParts),
+    };
+  }
+
+  return {
+    baseBtc: Number(currentBtc),
+    remainingParts: SELL_SPLIT_PARTS,
+  };
 }
 
 function ema(values, period) {
@@ -204,22 +224,32 @@ export async function evaluateBot(previousState) {
       reason: signal.reason,
       candle_time: last.time,
     };
+    delete nextState.last_signal.exitPlan;
   }
 
   if (!alreadyProcessed && signal.side === "SELL" && nextState.btc > 0) {
     const equityBefore = nextState.cash + nextState.btc * price;
-    const positionPct = positionPctFromSignal(signal.score, "SELL");
+    const exitPlan = getActiveExitPlan(state, nextState.btc);
+    const trancheAmount = exitPlan.baseBtc / SELL_SPLIT_PARTS;
     const avgEntryBefore = nextState.avg_entry;
-    const amount = nextState.btc * positionPct;
+    const amount = exitPlan.remainingParts <= 1 ? nextState.btc : Math.min(nextState.btc, trancheAmount);
+    const positionPct = amount / Math.max(exitPlan.baseBtc, BTC_DUST);
     const proceeds = amount * price;
     const costBasis = amount * (avgEntryBefore || price);
     const realizedPnl = proceeds - costBasis;
     const realizedPnlPct = avgEntryBefore ? ((price - avgEntryBefore) / avgEntryBefore) * 100 : null;
     nextState.cash += proceeds;
     nextState.btc = Math.max(0, nextState.btc - amount);
-    if (nextState.btc <= 0.00000001) {
+    const remainingParts = Math.max(0, exitPlan.remainingParts - 1);
+    if (nextState.btc <= BTC_DUST || remainingParts === 0) {
       nextState.btc = 0;
       nextState.avg_entry = null;
+      delete nextState.last_signal.exitPlan;
+    } else {
+      nextState.last_signal.exitPlan = {
+        baseBtc: exitPlan.baseBtc,
+        remainingParts,
+      };
     }
     trade = {
       side: "SELL",
@@ -232,7 +262,7 @@ export async function evaluateBot(previousState) {
       avg_entry_before: avgEntryBefore,
       realized_pnl: realizedPnl,
       realized_pnl_pct: realizedPnlPct,
-      reason: signal.reason,
+      reason: `${signal.reason}, 3분할 매도 ${SELL_SPLIT_PARTS - exitPlan.remainingParts + 1}/${SELL_SPLIT_PARTS}`,
       candle_time: last.time,
     };
   }
