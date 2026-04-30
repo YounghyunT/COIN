@@ -201,12 +201,15 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   let sellScore = 0;
 
   if (rsi14) {
-    if (rsi14 <= 34) {
+    if (rsi14 <= 38) {
       buyScore += 3;
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도 구간`);
-    } else if (rsi14 <= 42) {
+    } else if (rsi14 <= 52) {
       buyScore += 2;
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 반등 후보`);
+    } else if (rsi14 <= 58) {
+      buyScore += 1;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격 매수 허용`);
     } else {
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
     }
@@ -218,9 +221,12 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   }
 
   if (band) {
-    if (price <= band.lower * 1.004) {
+    if (price <= band.lower * 1.01) {
       buyScore += 2;
       buyReasons.push("볼린저 하단 근접");
+    } else if (price <= band.middle) {
+      buyScore += 1;
+      buyReasons.push("볼린저 중심선 이하");
     }
     if (rebound) {
       buyScore += 1;
@@ -237,9 +243,9 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   }
 
   if (ema20 && ema60) {
-    if (price >= ema60 * 0.992 && ema20 >= ema60 * 0.995) {
+    if (price >= ema60 * 0.985 && ema20 >= ema60 * 0.99) {
       buyScore += 1;
-      buyReasons.push("15분봉 추세 훼손 없음");
+      buyReasons.push("15분봉 추세 허용 범위");
     } else {
       sellScore += 1;
       sellReasons.push("15분봉 추세 약화");
@@ -247,9 +253,9 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   }
 
   if (fearGreedValue !== null && fearGreedValue !== undefined) {
-    if (fearGreedValue <= 45) {
+    if (fearGreedValue <= 60) {
       buyScore += 1;
-      buyReasons.push(`공포·탐욕 ${fearGreedValue}: 과열 아님`);
+      buyReasons.push(`공포·탐욕 ${fearGreedValue}: 매수 허용`);
     }
     if (fearGreedValue >= 70) {
       sellScore += 1;
@@ -258,7 +264,7 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   }
 
   if (ma20Gap !== null) {
-    if (ma20Gap <= 6) {
+    if (ma20Gap <= 10) {
       buyScore += 1;
       buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 추격매수 억제 통과`);
     } else {
@@ -267,7 +273,7 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   }
 
   if (pnl !== null) {
-    if (pnl >= 1.3) {
+    if (pnl >= 1) {
       sellScore += 4;
       sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 15분봉 익절`);
     } else if (pnl <= -0.7) {
@@ -284,15 +290,15 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
     return { side: "SELL", label: "15분 안정 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
-  if (!entryPrice && buyScore >= 6) {
-    return { side: "BUY", label: "15분 안정 매수", score: buyScore, reason: buyReasons.join(", ") };
+  if (!entryPrice && buyScore >= 4) {
+    return { side: "BUY", label: "15분 공격 매수", score: buyScore, reason: buyReasons.join(", ") };
   }
 
   if (entryPrice) {
     return { side: "WAIT", label: "15분 보유 대기", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
   }
 
-  return { side: "WAIT", label: buyScore >= 4 ? "15분 매수 관찰" : "15분 중립 대기", score: buyScore, reason: buyReasons.join(", ") };
+  return { side: "WAIT", label: buyScore >= 3 ? "15분 매수 관찰" : "15분 중립 대기", score: buyScore, reason: buyReasons.join(", ") };
 }
 
 function buildStrategySignal(args) {

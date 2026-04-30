@@ -64,14 +64,14 @@ const BOT_PROFILES = [
   {
     id: "gagok-daegwang-v1",
     name: "가곡대광v1.0",
-    status: "운영 준비",
+    status: "운영 중",
     interval: "15분봉",
     style: "안정형 추세 확인",
     helper: "별도 bot_id로 기록되는 15분봉 모의투자 봇",
     ruleCards: [
       ["봇 판단 기준", "15분봉 완성봉", "RSI(14) · 볼린저밴드 평균회귀"],
       ["보조 판단", "EMA 20/60", "15분봉 추세 훼손 구간 진입 억제"],
-      ["청산 설계", "+1.3% / -0.7%", "익절 또는 손절 조건 도달 시 전량 청산"],
+      ["청산 설계", "+1.0% / -0.7%", "익절 또는 손절 조건 도달 시 전량 청산"],
     ],
   },
 ];
@@ -385,6 +385,125 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
     score: buyScore,
     reason: buyReasons.join(", "),
   };
+}
+
+function buildGagokAlertSignal({ alertCandles, alertIndicators, dailyCandles, fearGreed, entryPrice }) {
+  const last = alertCandles.at(-1);
+  const previous = alertCandles.at(-2);
+  if (!last) return { side: "WAIT", label: "15분 대기", score: 0, reason: "15분봉 완성봉 데이터 수집 중" };
+
+  const dailyCloses = dailyCandles.map((candle) => candle.close);
+  const dailyMa20 = sma(dailyCloses, 20).at(-1);
+  const rsi14 = alertIndicators.rsi.at(-1);
+  const ema20 = ema(alertCandles.map((candle) => candle.close), 20).at(-1);
+  const ema60 = ema(alertCandles.map((candle) => candle.close), 60).at(-1);
+  const band = alertIndicators.bollinger.at(-1);
+  const price = last.close;
+  const pnl = entryPrice ? ((price - entryPrice) / entryPrice) * 100 : null;
+  const fearGreedValue = fearGreed?.value;
+  const ma20Gap = dailyMa20 ? ((price - dailyMa20) / dailyMa20) * 100 : null;
+  const rebound = band && previous ? previous.close < band.lower && price >= band.lower : false;
+  const buyReasons = [];
+  const sellReasons = [];
+  let buyScore = 0;
+  let sellScore = 0;
+
+  if (rsi14) {
+    if (rsi14 <= 38) {
+      buyScore += 3;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과매도 구간`);
+    } else if (rsi14 <= 52) {
+      buyScore += 2;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 반등 후보`);
+    } else if (rsi14 <= 58) {
+      buyScore += 1;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격 매수 허용`);
+    } else {
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
+    }
+
+    if (rsi14 >= 68) {
+      sellScore += 2;
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과열권`);
+    }
+  }
+
+  if (band) {
+    if (price <= band.lower * 1.01) {
+      buyScore += 2;
+      buyReasons.push("볼린저 하단 근접");
+    } else if (price <= band.middle) {
+      buyScore += 1;
+      buyReasons.push("볼린저 중심선 이하");
+    }
+    if (rebound) {
+      buyScore += 1;
+      buyReasons.push("볼린저 하단 이탈 후 회복");
+    }
+    if (price >= band.upper * 0.996) {
+      sellScore += 2;
+      sellReasons.push("볼린저 상단 근접");
+    }
+    if (price >= band.middle && pnl !== null && pnl > 0) {
+      sellScore += 1;
+      sellReasons.push("볼린저 중심선 위 수익권");
+    }
+  }
+
+  if (ema20 && ema60) {
+    if (price >= ema60 * 0.985 && ema20 >= ema60 * 0.99) {
+      buyScore += 1;
+      buyReasons.push("EMA 20/60 추세 허용 범위");
+    } else {
+      sellScore += 1;
+      sellReasons.push("EMA 20/60 추세 약화");
+    }
+  }
+
+  if (fearGreedValue !== null && fearGreedValue !== undefined) {
+    if (fearGreedValue <= 60) {
+      buyScore += 1;
+      buyReasons.push(`공포·탐욕 ${fearGreedValue}: 매수 허용`);
+    }
+    if (fearGreedValue >= 70) {
+      sellScore += 1;
+      sellReasons.push(`공포·탐욕 ${fearGreedValue}: 탐욕 구간`);
+    }
+  }
+
+  if (ma20Gap !== null) {
+    if (ma20Gap <= 10) {
+      buyScore += 1;
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 추격매수 억제 통과`);
+    } else {
+      sellReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 과열 주의`);
+    }
+  }
+
+  if (pnl !== null) {
+    if (pnl >= 1) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 전량 익절 기준`);
+    } else if (pnl <= -0.7) {
+      sellScore += 4;
+      sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 전량 손절 기준`);
+    } else {
+      sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`);
+    }
+  } else {
+    sellReasons.push("보유 포지션 없음");
+  }
+
+  if (entryPrice && sellScore >= 4) {
+    return { side: "SELL", label: "15분 안정 매도", score: sellScore, reason: sellReasons.join(", ") };
+  }
+  if (!entryPrice && buyScore >= 4) {
+    return { side: "BUY", label: "15분 공격 매수", score: buyScore, reason: buyReasons.join(", ") };
+  }
+  if (entryPrice) {
+    return { side: "WAIT", label: "15분 보유 대기", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
+  }
+  return { side: "WAIT", label: buyScore >= 3 ? "15분 매수 관찰" : "15분 중립 대기", score: buyScore, reason: buyReasons.join(", ") };
 }
 
 function buildRestUrl(source, interval, startTime) {
@@ -1258,37 +1377,73 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
 function App() {
   const [interval, setInterval] = useState("1d");
   const [selectedBotId, setSelectedBotId] = useState(BOT_PROFILES[0].id);
+  const [alertBotId, setAlertBotId] = useState(BOT_PROFILES[0].id);
   const botState = useBotState(selectedBotId);
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
   const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
+  const { candles: gagokAlertCandles, status: gagokAlertStatus } = useMarketData("15m");
   const { candles: trendCandles, status: trendStatus } = useMarketData(TREND_FILTER_INTERVAL);
   const { candles: dailyCandles } = useMarketData(DAILY_FILTER_INTERVAL);
+  const { candles: indicatorCandles4h } = useMarketData("4h");
+  const { candles: indicatorCandles1h } = useMarketData("1h");
+  const { candles: indicatorCandles1d } = useMarketData("1d");
   const fearGreed = useFearGreedIndex();
   const indicators = useMemo(() => buildIndicators(candles), [candles]);
   const alertIndicators = useMemo(() => buildIndicators(alertCandles), [alertCandles]);
+  const gagokAlertIndicators = useMemo(() => buildIndicators(gagokAlertCandles), [gagokAlertCandles]);
   const trendIndicators = useMemo(() => buildIndicators(trendCandles), [trendCandles]);
+  const indicator4h = useMemo(() => buildIndicators(indicatorCandles4h), [indicatorCandles4h]);
+  const indicator1h = useMemo(() => buildIndicators(indicatorCandles1h), [indicatorCandles1h]);
+  const indicator1d = useMemo(() => buildIndicators(indicatorCandles1d), [indicatorCandles1d]);
   const signal = useMemo(() => buildSignal(candles, indicators), [candles, indicators]);
   const trendFilter = useMemo(() => buildTrendFilter(trendCandles, trendIndicators), [trendCandles, trendIndicators]);
   const botEntryPrice = botState.state?.avg_entry ? Number(botState.state.avg_entry) : null;
   const alertSignal = useMemo(
-    () =>
-      buildStrategySignal({
+    () => {
+      const entryPrice = selectedBotId === alertBotId ? botEntryPrice : null;
+      if (alertBotId === "gagok-daegwang-v1") {
+        return buildGagokAlertSignal({
+          alertCandles: gagokAlertCandles,
+          alertIndicators: gagokAlertIndicators,
+          dailyCandles,
+          fearGreed,
+          entryPrice,
+        });
+      }
+
+      return buildStrategySignal({
         alertCandles,
         alertIndicators,
         dailyCandles,
         fearGreed,
-        entryPrice: botEntryPrice,
-      }),
-    [alertCandles, alertIndicators, dailyCandles, fearGreed, botEntryPrice],
+        entryPrice,
+      });
+    },
+    [
+      alertBotId,
+      alertCandles,
+      alertIndicators,
+      gagokAlertCandles,
+      gagokAlertIndicators,
+      dailyCandles,
+      fearGreed,
+      botEntryPrice,
+      selectedBotId,
+    ],
   );
   const last = candles.at(-1);
-  const alertLast = alertCandles.at(-1);
-  const lastRsi = indicators.rsi.at(-1);
-  const lastMacd = indicators.macd.at(-1);
-  const lastBand = indicators.bollinger.at(-1);
+  const selectedAlertCandles = alertBotId === "gagok-daegwang-v1" ? gagokAlertCandles : alertCandles;
+  const selectedAlertStatus = alertBotId === "gagok-daegwang-v1" ? gagokAlertStatus : alertStatus;
+  const selectedAlertLast = selectedAlertCandles.at(-1);
+  const activeAlertBot = BOT_PROFILES.find((bot) => bot.id === alertBotId) ?? BOT_PROFILES[0];
+  const lastRsi = indicator4h.rsi.at(-1);
+  const lastMacd = indicator1h.macd.at(-1);
+  const lastEmaFast = indicator4h.emaFast.at(-1);
+  const lastEmaSlow = indicator4h.emaSlow.at(-1);
+  const lastBand = indicator1d.bollinger.at(-1);
   const dailyMa20 = useMemo(() => sma(dailyCandles.map((candle) => candle.close), 20).at(-1), [dailyCandles]);
-  const ma20Gap = dailyMa20 && alertLast ? ((alertLast.close - dailyMa20) / dailyMa20) * 100 : null;
+  const ma20Gap = dailyMa20 && selectedAlertLast ? ((selectedAlertLast.close - dailyMa20) / dailyMa20) * 100 : null;
 
   return (
     <main className="min-h-screen bg-[#0b0f12] text-slate-100">
@@ -1340,19 +1495,46 @@ function App() {
                 <Bell size={18} />
                 <span>전략 알림 판단</span>
               </div>
+              <div className="bot-switcher compact" role="tablist" aria-label="Alert bot selector">
+                {BOT_PROFILES.map((bot) => (
+                  <button
+                    className={`bot-switch ${bot.id === alertBotId ? "active" : ""}`}
+                    key={bot.id}
+                    onClick={() => setAlertBotId(bot.id)}
+                    type="button"
+                  >
+                    <span>{bot.name}</span>
+                    <small>{bot.interval} 알림 기준</small>
+                  </button>
+                ))}
+              </div>
               <div className={`signal-box ${alertSignal.side.toLowerCase()}`}>
-                <div className="text-sm text-slate-400">1분봉 RSI + EMA + 모멘텀 + 공포·탐욕</div>
+                <div className="text-sm text-slate-400">
+                  {activeAlertBot.id === "gagok-daegwang-v1"
+                    ? "15분봉 RSI + Bollinger + EMA 20/60"
+                    : "1분봉 RSI + EMA + 모멘텀 + 공포·탐욕"}
+                </div>
                 <div className="mt-1 text-3xl font-semibold">{alertSignal.label}</div>
                 <div className="mt-3 text-sm leading-6 text-slate-300">{alertSignal.reason}</div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <IndicatorCard title="전략 점수" value={alertSignal.score.toFixed(1)} caption={alertStatus.message} />
+                <IndicatorCard title="전략 점수" value={alertSignal.score.toFixed(1)} caption={selectedAlertStatus.message} />
                 <IndicatorCard title="공포·탐욕" value={fearGreed.value ?? "--"} caption={`${fearGreed.label} · ${fearGreed.status}`} />
                 <IndicatorCard title="20일선 대비" value={ma20Gap !== null ? `${ma20Gap >= 0 ? "+" : ""}${ma20Gap.toFixed(1)}%` : "--"} caption={dailyMa20 ? `MA20 $${formatUsd(dailyMa20, 0)}` : "계산 중"} />
-                <IndicatorCard title="평균 매수가" value={botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"} caption={botEntryPrice ? "테스트 익절 +0.4% / 손절 -0.2%" : "보유 포지션 없음"} />
+                <IndicatorCard
+                  title="평균 매수가"
+                  value={selectedBotId === alertBotId && botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"}
+                  caption={
+                    activeAlertBot.id === "gagok-daegwang-v1"
+                      ? "익절 +1.0% / 손절 -0.7%"
+                      : selectedBotId === alertBotId && botEntryPrice
+                        ? "테스트 익절 +0.4% / 손절 -0.2%"
+                        : "선택 봇 보유 포지션 없음"
+                  }
+                />
               </div>
             </section>
-            <TelegramPanel signal={alertSignal} lastPrice={alertLast?.close} signalTime={alertLast?.time} trend={trendFilter} />
+            <TelegramPanel signal={alertSignal} lastPrice={selectedAlertLast?.close} signalTime={selectedAlertLast?.time} trend={trendFilter} />
           </aside>
         </section>
 
@@ -1360,17 +1542,17 @@ function App() {
           <IndicatorCard
             title="RSI 14"
             value={lastRsi ? lastRsi.toFixed(1) : "--"}
-            caption={lastRsi > 70 ? "과매수 구간" : lastRsi < 30 ? "과매도 구간" : "중립 구간"}
+            caption={`4시간봉 · ${lastRsi > 70 ? "과매수 구간" : lastRsi < 30 ? "과매도 구간" : "중립 구간"}`}
             tone={lastRsi > 70 ? "text-rose-400" : lastRsi < 30 ? "text-emerald-400" : "text-slate-50"}
           />
           <IndicatorCard
             title="MACD"
             value={lastMacd ? lastMacd.histogram.toFixed(2) : "--"}
-            caption="히스토그램"
+            caption="1시간봉 히스토그램"
             tone={lastMacd?.histogram > 0 ? "text-emerald-400" : "text-rose-400"}
           />
-          <IndicatorCard title="EMA 9 / 21" value={`${formatUsd(indicators.emaFast.at(-1), 0)} / ${formatUsd(indicators.emaSlow.at(-1), 0)}`} caption="단기 추세" />
-          <IndicatorCard title="Bollinger" value={lastBand ? `${formatUsd(lastBand.lower, 0)} - ${formatUsd(lastBand.upper, 0)}` : "--"} caption="20, 2σ 밴드" />
+          <IndicatorCard title="EMA 9 / 21" value={`${formatUsd(lastEmaFast, 0)} / ${formatUsd(lastEmaSlow, 0)}`} caption="4시간봉 추세" />
+          <IndicatorCard title="Bollinger" value={lastBand ? `${formatUsd(lastBand.lower, 0)} - ${formatUsd(lastBand.upper, 0)}` : "--"} caption="일봉 20, 2σ 밴드" />
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">

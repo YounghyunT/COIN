@@ -270,6 +270,14 @@ code {
   color: #bbf7d0;
 }
 
+.bot-switcher.compact {
+  margin-top: 14px;
+}
+
+.bot-switcher.compact .bot-switch {
+  padding: 9px 10px;
+}
+
 .bot-status-strip {
   display: grid;
   grid-template-columns: auto 1fr auto;
