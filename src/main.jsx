@@ -1146,7 +1146,29 @@ function AiBotPanel({ botState }) {
             ? `매수 ${suggestedBuyPct}%`
             : suggestedSellPct
               ? `매도 ${suggestedSellPct}%`
-              : "대기"}
+            : "대기"}
+        </div>
+      </div>
+      <div className="bot-rule-board">
+        <div className="bot-rule-card">
+          <span>봇 판단 기준</span>
+          <strong>1분봉</strong>
+          <small>RSI(14) · EMA 9/21 · 단기 모멘텀</small>
+        </div>
+        <div className="bot-rule-card">
+          <span>보조 판단</span>
+          <strong>1일봉 MA20</strong>
+          <small>공포·탐욕 지수와 20일선 괴리율 반영</small>
+        </div>
+        <div className="bot-rule-card">
+          <span>테스트 청산</span>
+          <strong>+0.4% / -0.2%</strong>
+          <small>익절과 손절을 공격적으로 검증</small>
+        </div>
+        <div className="bot-rule-card">
+          <span>최근 점수</span>
+          <strong>{lastSignal?.score !== undefined ? Number(lastSignal.score).toFixed(1) : "--"}</strong>
+          <small>{lastSignal?.side ? `${lastSignal.side} · ${lastSignal.label}` : "아직 신호 대기 중"}</small>
         </div>
       </div>
       <div className="ai-trades-title">
@@ -1175,6 +1197,10 @@ function AiBotPanel({ botState }) {
                   : "--"}
               </span>
               <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
+              <span className="trade-reason">
+                <strong>판단봉 1m</strong>
+                <span>{trade.reason || "체결 사유 기록 없음"}</span>
+              </span>
             </div>
           ))
         )}
