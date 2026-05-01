@@ -2,10 +2,10 @@ export const BOTS = [
   {
     id: "poongdeok-xi-v1",
     name: "풍덕자이v1.0",
-    interval: "1m",
+    interval: "15m",
     candleLimit: 240,
     initialCash: 50000,
-    strategy: "aggressive-scalp",
+    strategy: "trend-pullback",
   },
   {
     id: "gagok-daegwang-v1",

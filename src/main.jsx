@@ -39,7 +39,7 @@ const TIMEFRAMES = [
   { label: "1일", value: "1d", caption: "2023년부터", stepMs: 24 * 60 * 60_000, maxRequests: 4 },
 ];
 
-const ALERT_INTERVAL = "1m";
+const ALERT_INTERVAL = "15m";
 const TREND_FILTER_INTERVAL = "1h";
 const DAILY_FILTER_INTERVAL = "1d";
 const FEAR_GREED_ENDPOINT = "https://api.alternative.me/fng/?limit=1";
@@ -52,13 +52,13 @@ const BOT_PROFILES = [
     id: "poongdeok-xi-v1",
     name: "풍덕자이v1.0",
     status: "운영 중",
-    interval: "1분봉",
-    style: "공격형 단기 테스트",
-    helper: "현재 Supabase에 기록 중인 실시간 모의투자 봇",
+    interval: "15분봉",
+    style: "추세 눌림·돌파형",
+    helper: "15분봉 추세와 눌림목을 함께 보는 모의투자 봇",
     ruleCards: [
-      ["봇 판단 기준", "1분봉", "RSI(14) · EMA 9/21 · 단기 모멘텀"],
-      ["보조 판단", "1일봉 MA20", "공포·탐욕 지수와 20일선 괴리율 반영"],
-      ["테스트 청산", "3분할 매도", "익절 +0.4% / 손절 -0.2% 발생 시 보유량을 세 번에 나눠 정리"],
+      ["봇 판단 기준", "15분봉 완성봉", "EMA 9/21/55 정배열 · RSI 추세 지속"],
+      ["진입 방식", "눌림+돌파", "EMA 21 눌림 또는 최근 24개 15분봉 고점 돌파 확인"],
+      ["청산 설계", "+0.9% / -0.55%", "보유 현금의 약 98% 진입 후 익절 또는 손절 시 전량 청산"],
     ],
   },
   {
@@ -267,32 +267,37 @@ function applyTrendFilter(signal, trend) {
 
 function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fearGreed, entryPrice }) {
   const last = alertCandles.at(-1);
-  const previous = alertCandles.at(-4) ?? alertCandles.at(-2);
-  if (!last) return { side: "WAIT", label: "대기", score: 0, reason: "1분봉 데이터 수집 중" };
+  const previous = alertCandles.at(-5) ?? alertCandles.at(-2);
+  if (!last) return { side: "WAIT", label: "15분 대기", score: 0, reason: "15분봉 데이터 수집 중" };
 
   const dailyCloses = dailyCandles.map((candle) => candle.close);
   const ma20 = sma(dailyCloses, 20).at(-1);
   const rsi14 = alertIndicators.rsi.at(-1);
   const emaFast = alertIndicators.emaFast.at(-1);
   const emaSlow = alertIndicators.emaSlow.at(-1);
+  const closes = alertCandles.map((candle) => candle.close);
+  const emaTrend = ema(closes, 55).at(-1);
   const fearGreedValue = fearGreed?.value;
   const price = last.close;
   const ma20Gap = ma20 ? ((price - ma20) / ma20) * 100 : null;
   const pnl = entryPrice ? ((price - entryPrice) / entryPrice) * 100 : null;
   const momentum = previous ? ((price - previous.close) / previous.close) * 100 : 0;
+  const recentHigh = Math.max(...alertCandles.slice(-24, -1).map((candle) => candle.high ?? candle.close));
+  const pullbackToEma = emaSlow ? price >= emaSlow * 0.995 && price <= emaSlow * 1.012 : false;
+  const breakout = Number.isFinite(recentHigh) && price >= recentHigh * 0.998;
   const buyReasons = [];
   const sellReasons = [];
   let buyScore = 0;
   let sellScore = 0;
 
   if (fearGreedValue !== null && fearGreedValue !== undefined) {
-    if (fearGreedValue <= 60) {
-      buyScore += 2;
-      buyReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 매수 허용 구간`);
+    if (fearGreedValue <= 72) {
+      buyScore += 1;
+      buyReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 추세 매수 허용`);
     }
-    if (fearGreedValue >= 55) {
-      sellScore += 2;
-      sellReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 매도 경계 구간`);
+    if (fearGreedValue >= 78) {
+      sellScore += 1;
+      sellReasons.push(`공포·탐욕 지수 ${fearGreedValue}: 과열 경계`);
     }
   } else {
     buyReasons.push("공포·탐욕 지수 확인 중");
@@ -300,9 +305,12 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
   }
 
   if (ma20Gap !== null) {
-    if (ma20Gap <= 1) {
-      buyScore += 2;
-      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 저평가 테스트 조건`);
+    if (ma20Gap >= -8 && ma20Gap <= 8) {
+      buyScore += 1;
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 추세 추격 허용 범위`);
+    } else if (ma20Gap > 12) {
+      sellScore += 1;
+      sellReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 단기 과열`);
     } else {
       buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%`);
     }
@@ -311,50 +319,66 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
   }
 
   if (rsi14) {
-    if (rsi14 <= 55) {
+    if (rsi14 >= 48 && rsi14 <= 64) {
       buyScore += 2;
-      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격적 매수 허용`);
-    } else if (rsi14 <= 62) {
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 추세 지속 구간`);
+    } else if (rsi14 >= 42 && rsi14 < 48) {
       buyScore += 1;
-      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 중립 매수 후보`);
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 눌림 반등 후보`);
     } else {
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
     }
 
-    if (rsi14 >= 58) {
+    if (rsi14 >= 72) {
+      sellScore += 1;
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 과열권`);
+    } else if (rsi14 <= 38) {
       sellScore += 2;
-      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격적 과열 기준`);
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 추세 이탈 위험`);
     }
   } else {
     buyReasons.push("RSI(14) 계산 중");
     sellReasons.push("RSI(14) 계산 중");
   }
 
-  if (emaFast && emaSlow) {
-    if (emaFast >= emaSlow) {
+  if (emaFast && emaSlow && emaTrend) {
+    if (emaFast >= emaSlow && emaSlow >= emaTrend && price >= emaSlow) {
+      buyScore += 3;
+      buyReasons.push("EMA 9/21/55 정배열");
+    } else if (emaFast >= emaSlow && price >= emaTrend) {
       buyScore += 1;
-      buyReasons.push("EMA 9가 EMA 21 위");
+      buyReasons.push("EMA 9/21 단기 우위");
     } else {
-      sellScore += 1;
-      sellReasons.push("EMA 9가 EMA 21 아래");
+      sellScore += 2;
+      sellReasons.push("EMA 추세 약화");
     }
   }
 
-  if (momentum >= 0.05) {
+  if (pullbackToEma) {
     buyScore += 1;
-    buyReasons.push(`최근 단기 모멘텀 +${momentum.toFixed(2)}%`);
-  } else if (momentum <= -0.05) {
+    buyReasons.push("EMA 21 눌림 구간");
+  }
+
+  if (breakout) {
+    buyScore += 1;
+    buyReasons.push("최근 24개 15분봉 고점 돌파 시도");
+  }
+
+  if (momentum >= 0.12) {
+    buyScore += 1;
+    buyReasons.push(`최근 75분 모멘텀 +${momentum.toFixed(2)}%`);
+  } else if (momentum <= -0.35) {
     sellScore += 1;
-    sellReasons.push(`최근 단기 모멘텀 ${momentum.toFixed(2)}%`);
+    sellReasons.push(`최근 75분 모멘텀 ${momentum.toFixed(2)}%`);
   }
 
   if (pnl !== null) {
-    if (pnl >= 0.4) {
+    if (pnl >= 0.9) {
       sellScore += 4;
-      sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 테스트 익절`);
-    } else if (pnl <= -0.2) {
+      sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 추세형 익절`);
+    } else if (pnl <= -0.55) {
       sellScore += 4;
-      sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 테스트 손절`);
+      sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 추세형 손절`);
     } else {
       sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`);
     }
@@ -362,18 +386,18 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
     sellReasons.push("보유 포지션 없음");
   }
 
-  if (entryPrice && sellScore >= 1) {
-    return { side: "SELL", label: "공격 매도", score: sellScore, reason: sellReasons.join(", ") };
+  if (entryPrice && sellScore >= 3) {
+    return { side: "SELL", label: "15분 추세 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
-  if (!entryPrice && buyScore >= 3) {
-    return { side: "BUY", label: "공격 매수", score: buyScore, reason: buyReasons.join(", ") };
+  if (!entryPrice && buyScore >= 6) {
+    return { side: "BUY", label: "15분 추세 매수", score: buyScore, reason: buyReasons.join(", ") };
   }
 
   if (entryPrice) {
     return {
       side: "WAIT",
-      label: "보유 대기",
+      label: "15분 추세 보유",
       score: Math.max(buyScore, sellScore),
       reason: sellReasons.join(", "),
     };
@@ -381,7 +405,7 @@ function buildStrategySignal({ alertCandles, alertIndicators, dailyCandles, fear
 
   return {
     side: "WAIT",
-    label: buyScore >= 2 ? "매수 관찰" : "중립 대기",
+    label: buyScore >= 4 ? "15분 추세 관찰" : "15분 중립 대기",
     score: buyScore,
     reason: buyReasons.join(", "),
   };
@@ -1185,7 +1209,7 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
           signal: signal.label,
           price: lastPrice,
           reason: `[전략 신호] ${signal.reason}`,
-          timeframe: "1분봉",
+          timeframe: "15분봉",
           trend: `${trend.label}: ${trend.reason}`,
           timestamp: new Date().toISOString(),
         }),
@@ -1227,7 +1251,7 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
         전략 신호 테스트 전송
       </button>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
-        알림은 1분봉 RSI, 단기 EMA, 단기 모멘텀, 20일 이동평균선, 공포·탐욕 지수를 공격적으로 종합해 보냅니다. Vercel 프로젝트에{" "}
+        알림은 선택한 봇의 15분봉 RSI, EMA, 모멘텀, 20일 이동평균선, 공포·탐욕 지수를 종합해 보냅니다. Vercel 프로젝트에{" "}
         <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>를 등록하면 실제 봇 메시지를 보냅니다.
       </div>
     </section>
@@ -1257,9 +1281,15 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
     : null);
   const lastSignal = state?.last_signal;
   const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
-  const suggestedBuyPct = lastSignal?.side === "BUY" ? (Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
-  const suggestedSellPct = lastSignal?.side === "SELL" ? (activeBot.id === "gagok-daegwang-v1" ? 100 : 33) : null;
-  const displayBuyPct = activeBot.id === "gagok-daegwang-v1" && suggestedBuyPct ? 98 : suggestedBuyPct;
+  const isFullSizeBot = activeBot.id === "gagok-daegwang-v1" || activeBot.id === "poongdeok-xi-v1";
+  const suggestedBuyPct = lastSignal?.side === "BUY" ? (isFullSizeBot ? 98 : Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
+  const suggestedSellPct = lastSignal?.side === "SELL" ? (isFullSizeBot ? 100 : 33) : null;
+  const displayBuyPct = suggestedBuyPct;
+  const tradeIntervalLabel = (interval) => {
+    if (interval === "15m") return "15분봉";
+    if (interval === "1m") return "1분봉";
+    return activeBot.interval;
+  };
 
   return (
     <section className="panel">
@@ -1300,7 +1330,11 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
         <IndicatorCard title="총 평가금" value={state ? `$${formatUsd(equity)}` : "--"} caption={state ? `총손익 ${totalPnl >= 0 ? "+" : ""}$${formatUsd(totalPnl)}` : "DB 저장 계좌"} />
         <IndicatorCard title="보유 현금" value={state ? `$${formatUsd(cash)}` : "--"} caption="가상 USDT" />
         <IndicatorCard title="보유 BTC" value={state ? btc.toFixed(6) : "--"} caption="AI봇 수량" />
-        <IndicatorCard title="평균 매수가" value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"} caption="테스트 익절 +0.4% / 손절 -0.2%" />
+        <IndicatorCard
+          title="평균 매수가"
+          value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"}
+          caption={activeBot.id === "gagok-daegwang-v1" ? "익절 +1.0% / 손절 -0.7%" : "익절 +0.9% / 손절 -0.55%"}
+        />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <IndicatorCard title="실현 손익" value={`$${formatUsd(realizedPnl)}`} caption={`${sellCount}회 청산 기준 · 미실현 제외`} tone={realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"} />
@@ -1363,7 +1397,7 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
               </span>
               <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
               <span className="trade-reason">
-                <strong>판단봉 1m</strong>
+                <strong>판단봉 {tradeIntervalLabel(trade.interval)}</strong>
                 <span>{trade.reason || "체결 사유 기록 없음"}</span>
               </span>
             </div>
@@ -1512,7 +1546,7 @@ function App() {
                 <div className="text-sm text-slate-400">
                   {activeAlertBot.id === "gagok-daegwang-v1"
                     ? "15분봉 RSI + Bollinger + EMA 20/60"
-                    : "1분봉 RSI + EMA + 모멘텀 + 공포·탐욕"}
+                    : "15분봉 EMA 9/21/55 + RSI + 눌림·돌파"}
                 </div>
                 <div className="mt-1 text-3xl font-semibold">{alertSignal.label}</div>
                 <div className="mt-3 text-sm leading-6 text-slate-300">{alertSignal.reason}</div>
@@ -1528,7 +1562,7 @@ function App() {
                     activeAlertBot.id === "gagok-daegwang-v1"
                       ? "익절 +1.0% / 손절 -0.7%"
                       : selectedBotId === alertBotId && botEntryPrice
-                        ? "테스트 익절 +0.4% / 손절 -0.2%"
+                        ? "익절 +0.9% / 손절 -0.55%"
                         : "선택 봇 보유 포지션 없음"
                   }
                 />
