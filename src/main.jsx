@@ -1307,9 +1307,9 @@ function BinanceTestnetPanel({ status }) {
   const account = status.status?.account;
   const positions = status.status?.positions ?? [];
   const commissions = status.status?.commissions ?? [];
+  const usdcAsset = account?.assets?.find((asset) => asset.asset === "USDC");
   const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
   const btcUsdcFee = commissions.find((item) => item.symbol === "BTCUSDC");
-  const btcUsdtFee = commissions.find((item) => item.symbol === "BTCUSDT");
   const feeLabel = (item) =>
     item?.ok
       ? `Maker ${(item.makerCommissionRate * 100).toFixed(4)}% / Taker ${(item.takerCommissionRate * 100).toFixed(4)}%`
@@ -1329,16 +1329,21 @@ function BinanceTestnetPanel({ status }) {
         <div className="mt-3 text-sm leading-6 text-slate-300">
           {status.error
             ? status.error
-            : status.status
-              ? `${status.status.mode.toUpperCase()} · ${new Date(status.status.checkedAt).toLocaleTimeString()} 동기화`
+          : status.status
+              ? `${status.status.mode.toUpperCase()} · BTCUSDC 25x 테스트넷 · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
               : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <IndicatorCard
-          title="사용 가능 잔고"
-          value={account ? `$${formatUsd(account.availableBalance)}` : "--"}
-          caption="Futures available balance"
+          title="USDC 사용 가능"
+          value={usdcAsset ? `$${formatUsd(usdcAsset.availableBalance)}` : "--"}
+          caption="BTCUSDC 주문 기준 잔고"
+        />
+        <IndicatorCard
+          title="USDC 지갑 잔고"
+          value={usdcAsset ? `$${formatUsd(usdcAsset.walletBalance)}` : "--"}
+          caption="테스트넷 USDC wallet"
         />
         <IndicatorCard
           title="미실현 손익"
@@ -1347,7 +1352,6 @@ function BinanceTestnetPanel({ status }) {
           tone={Number(account?.totalUnrealizedProfit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
         />
         <IndicatorCard title="BTCUSDC 수수료" value={btcUsdcFee?.ok ? `${(btcUsdcFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdcFee)} />
-        <IndicatorCard title="BTCUSDT 수수료" value={btcUsdtFee?.ok ? `${(btcUsdtFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdtFee)} />
       </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
         {activePositions.length

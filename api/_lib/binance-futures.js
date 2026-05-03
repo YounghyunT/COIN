@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 const DEFAULT_TESTNET_BASE_URL = "https://testnet.binancefuture.com";
-const DEFAULT_SYMBOLS = ["BTCUSDT", "BTCUSDC"];
+const DEFAULT_SYMBOLS = ["BTCUSDC"];
 
 function getBinanceConfig() {
   const apiKey = process.env.BINANCE_TESTNET_API_KEY;
@@ -33,7 +33,16 @@ function buildQuery(params = {}) {
   return search.toString();
 }
 
-async function binanceRequest(path, { signed = false, params = {}, apiKey, secretKey, baseUrl } = {}) {
+export function assertTestnetConfig() {
+  const config = getBinanceConfig();
+  if (!config.testnet) throw new Error("Binance testnet trading is disabled");
+  if (!config.baseUrl.includes("testnet") && !config.baseUrl.includes("demo-fapi")) {
+    throw new Error("Refusing to trade because Binance base URL is not a testnet endpoint");
+  }
+  return config;
+}
+
+async function binanceRequest(path, { method = "GET", signed = false, params = {}, apiKey, secretKey, baseUrl } = {}) {
   const requestParams = {
     ...params,
     ...(signed ? { timestamp: Date.now(), recvWindow: 10_000 } : {}),
@@ -44,6 +53,7 @@ async function binanceRequest(path, { signed = false, params = {}, apiKey, secre
   }
 
   const response = await fetch(`${baseUrl}${path}${query ? `?${query}` : ""}`, {
+    method,
     headers: apiKey ? { "X-MBX-APIKEY": apiKey } : undefined,
   });
 
@@ -74,12 +84,13 @@ async function optionalSignedRequest(path, options) {
 
 function compactAccount(account) {
   const assets = account?.assets ?? [];
+  const usdc = assets.find((asset) => asset.asset === "USDC");
   return {
     totalWalletBalance: Number(account?.totalWalletBalance ?? 0),
     totalUnrealizedProfit: Number(account?.totalUnrealizedProfit ?? 0),
-    availableBalance: Number(account?.availableBalance ?? 0),
+    availableBalance: Number(usdc?.availableBalance ?? 0),
     assets: assets
-      .filter((asset) => ["USDT", "USDC", "BNB"].includes(asset.asset))
+      .filter((asset) => ["USDC"].includes(asset.asset))
       .map((asset) => ({
         asset: asset.asset,
         walletBalance: Number(asset.walletBalance ?? 0),
@@ -142,4 +153,72 @@ export async function getBinanceTestnetStatus(symbols = DEFAULT_SYMBOLS) {
     commissions: symbols.map((symbol, index) => compactCommission(symbol, commissionResults[index])),
     checkedAt: new Date().toISOString(),
   };
+}
+
+export async function getBinanceAccount() {
+  const config = assertTestnetConfig();
+  return binanceRequest("/fapi/v2/account", { ...config, signed: true });
+}
+
+export async function getBinancePosition(symbol) {
+  const config = assertTestnetConfig();
+  const rows = await binanceRequest("/fapi/v2/positionRisk", { ...config, signed: true, params: { symbol } });
+  const positions = Array.isArray(rows) ? rows : [rows];
+  return compactPosition(positions.find((position) => position.symbol === symbol) ?? positions[0] ?? {});
+}
+
+export async function getBinanceTickerPrice(symbol) {
+  const config = assertTestnetConfig();
+  const payload = await binanceRequest("/fapi/v1/ticker/price", { ...config, params: { symbol } });
+  return Number(payload.price);
+}
+
+export async function getBinanceExchangeSymbol(symbol) {
+  const config = assertTestnetConfig();
+  const payload = await binanceRequest("/fapi/v1/exchangeInfo", { ...config });
+  const info = payload.symbols?.find((item) => item.symbol === symbol);
+  if (!info) throw new Error(`${symbol} exchange info not found`);
+  return info;
+}
+
+export async function setBinanceLeverage(symbol, leverage) {
+  const config = assertTestnetConfig();
+  return binanceRequest("/fapi/v1/leverage", {
+    ...config,
+    method: "POST",
+    signed: true,
+    params: { symbol, leverage },
+  });
+}
+
+export async function setBinanceMarginType(symbol, marginType = "ISOLATED") {
+  const config = assertTestnetConfig();
+  try {
+    return await binanceRequest("/fapi/v1/marginType", {
+      ...config,
+      method: "POST",
+      signed: true,
+      params: { symbol, marginType },
+    });
+  } catch (error) {
+    if (error.message.includes("No need to change margin type")) return { ok: true, skipped: true };
+    throw error;
+  }
+}
+
+export async function placeBinanceMarketOrder({ symbol, side, quantity, reduceOnly = false }) {
+  const config = assertTestnetConfig();
+  return binanceRequest("/fapi/v1/order", {
+    ...config,
+    method: "POST",
+    signed: true,
+    params: {
+      symbol,
+      side,
+      type: "MARKET",
+      quantity,
+      reduceOnly: reduceOnly ? "true" : undefined,
+      newClientOrderId: `yk_${Date.now()}`,
+    },
+  });
 }

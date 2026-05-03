@@ -1,4 +1,5 @@
 import { BOTS } from "./_lib/bots.js";
+import { BINANCE_TESTNET_BOT_ID, runBinanceTestnetGagokTick } from "./_lib/binance-testnet-bot.js";
 import { evaluateBot } from "./_lib/strategy.js";
 import { getBotState, insertTrade, upsertBotState } from "./_lib/supabase-rest.js";
 
@@ -57,6 +58,46 @@ async function runBot(bot) {
   };
 }
 
+async function runBinanceTestnetBot() {
+  try {
+    const previousState = await getBotState(BINANCE_TESTNET_BOT_ID);
+    const result = await runBinanceTestnetGagokTick(previousState);
+    const state = await upsertBotState(result.state, BINANCE_TESTNET_BOT_ID);
+    const trade = await insertTrade(result.trade, BINANCE_TESTNET_BOT_ID);
+
+    return {
+      ok: true,
+      bot: {
+        id: BINANCE_TESTNET_BOT_ID,
+        name: "Binance Testnet 가곡대광v1.0",
+      },
+      alreadyProcessed: result.alreadyProcessed,
+      signal: result.signal,
+      state,
+      trade,
+      order: result.order
+        ? {
+            orderId: result.order.orderId,
+            symbol: result.order.symbol,
+            side: result.order.side,
+            status: result.order.status,
+            executedQty: result.order.executedQty,
+            avgPrice: result.order.avgPrice,
+          }
+        : null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      bot: {
+        id: BINANCE_TESTNET_BOT_ID,
+        name: "Binance Testnet 가곡대광v1.0",
+      },
+      error: error.message,
+    };
+  }
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") {
     response.status(405).json({ ok: false, error: "Method not allowed" });
@@ -73,8 +114,9 @@ export default async function handler(request, response) {
     for (const bot of BOTS) {
       results.push(await runBot(bot));
     }
+    const binanceTestnet = await runBinanceTestnetBot();
 
-    response.status(200).json({ ok: true, results });
+    response.status(200).json({ ok: true, results, binanceTestnet });
   } catch (error) {
     response.status(500).json({ ok: false, error: error.message });
   }

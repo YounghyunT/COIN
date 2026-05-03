@@ -7,7 +7,7 @@ export default async function handler(request, response) {
   }
 
   try {
-    const symbols = String(request.query?.symbols || "BTCUSDT,BTCUSDC")
+    const symbols = String(request.query?.symbols || "BTCUSDC")
       .split(",")
       .map((symbol) => symbol.trim().toUpperCase())
       .filter(Boolean)
