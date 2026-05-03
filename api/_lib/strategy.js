@@ -7,7 +7,11 @@ const BTC_DUST = 0.00000001;
 
 function positionPctFromSignal(score, side, bot) {
   if (side === "BUY") {
-    if (bot?.strategy === "balanced-mean-reversion" || bot?.strategy === "trend-pullback") {
+    if (
+      bot?.strategy === "balanced-mean-reversion" ||
+      bot?.strategy === "trend-pullback" ||
+      bot?.strategy === "aggressive-scalp"
+    ) {
       return 0.98;
     }
 
@@ -324,7 +328,147 @@ function buildGagokSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, i
   return { side: "WAIT", label: buyScore >= 3 ? "15분 매수 관찰" : "15분 중립 대기", score: buyScore, reason: buyReasons.join(", ") };
 }
 
+function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed, entryPrice, intervalLabel }) {
+  const last = alertCandles.at(-1);
+  const previous = alertCandles.at(-2);
+  const momentumBase = alertCandles.at(-4) ?? previous;
+  if (!last) return { side: "WAIT", label: "대기", score: 0, reason: `${intervalLabel} 데이터 수집 중` };
+
+  const closes = alertCandles.map((candle) => candle.close);
+  const dailyCloses = dailyCandles.map((candle) => candle.close);
+  const price = last.close;
+  const rsi14 = rsi(closes).at(-1);
+  const emaFast = ema(closes, 9).at(-1);
+  const emaMid = ema(closes, 21).at(-1);
+  const band = bollinger(closes, 20, 2).at(-1);
+  const dailyMa20 = sma(dailyCloses, 20).at(-1);
+  const fearGreedValue = fearGreed?.value;
+  const pnl = entryPrice ? ((price - entryPrice) / entryPrice) * 100 : null;
+  const ma20Gap = dailyMa20 ? ((price - dailyMa20) / dailyMa20) * 100 : null;
+  const prevClose = previous?.close ?? price;
+  const oneCandleMomentum = previous ? ((price - previous.close) / previous.close) * 100 : 0;
+  const shortMomentum = momentumBase ? ((price - momentumBase.close) / momentumBase.close) * 100 : 0;
+  const lowerBandRebound = band ? prevClose <= band.lower * 1.001 && price > band.lower : false;
+  const nearLowerBand = band ? price <= band.lower * 1.006 : false;
+  const emaReclaim = emaFast && emaMid ? prevClose < emaFast && price >= emaFast && price >= emaMid * 0.998 : false;
+  const recentHigh = Math.max(...alertCandles.slice(-10, -1).map((candle) => candle.high ?? candle.close));
+  const microBreakout = Number.isFinite(recentHigh) && price >= recentHigh * 0.9995;
+  const buyReasons = [];
+  const sellReasons = [];
+  let buyScore = 0;
+  let sellScore = 0;
+
+  if (fearGreedValue !== null && fearGreedValue !== undefined) {
+    if (fearGreedValue <= 80) {
+      buyScore += 1;
+      buyReasons.push(`공포·탐욕 ${fearGreedValue}: 공격 테스트 매수 허용`);
+    }
+    if (fearGreedValue >= 88) {
+      sellScore += 1;
+      sellReasons.push(`공포·탐욕 ${fearGreedValue}: 극단 과열`);
+    }
+  }
+
+  if (ma20Gap !== null) {
+    if (ma20Gap >= -12 && ma20Gap <= 12) {
+      buyScore += 1;
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 테스트 허용 범위`);
+    } else if (ma20Gap > 16) {
+      sellScore += 1;
+      sellReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 과열 주의`);
+    } else {
+      buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%`);
+    }
+  }
+
+  if (rsi14) {
+    if (rsi14 <= 38) {
+      buyScore += 3;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 1분봉 과매도 반등`);
+    } else if (rsi14 <= 55) {
+      buyScore += 2;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격 진입 가능`);
+    } else if (rsi14 <= 64) {
+      buyScore += 1;
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 단기 추세 추격`);
+    } else {
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
+    }
+
+    if (rsi14 >= 70) {
+      sellScore += 2;
+      sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 단기 과열`);
+    }
+  }
+
+  if (emaFast && emaMid) {
+    if (price >= emaFast && emaFast >= emaMid * 0.999) {
+      buyScore += 2;
+      buyReasons.push("EMA 9/21 단기 우위");
+    } else if (emaReclaim) {
+      buyScore += 2;
+      buyReasons.push("EMA 9 재돌파");
+    } else if (price < emaMid * 0.996) {
+      sellScore += 1;
+      sellReasons.push("EMA 21 하단 이탈");
+    }
+  }
+
+  if (lowerBandRebound) {
+    buyScore += 2;
+    buyReasons.push("볼린저 하단 반등");
+  } else if (nearLowerBand) {
+    buyScore += 1;
+    buyReasons.push("볼린저 하단 근접");
+  }
+
+  if (microBreakout) {
+    buyScore += 2;
+    buyReasons.push("최근 10개 1분봉 고점 돌파");
+  }
+
+  if (oneCandleMomentum >= 0.04 || shortMomentum >= 0.08) {
+    buyScore += 1;
+    buyReasons.push(`단기 모멘텀 ${shortMomentum >= 0 ? "+" : ""}${shortMomentum.toFixed(2)}%`);
+  } else if (oneCandleMomentum <= -0.08 || shortMomentum <= -0.16) {
+    sellScore += 2;
+    sellReasons.push(`단기 모멘텀 ${shortMomentum.toFixed(2)}%`);
+  }
+
+  if (pnl !== null) {
+    if (pnl >= 0.4) {
+      sellScore += 5;
+      sellReasons.push(`매수가 대비 +${pnl.toFixed(2)}%: 공격 익절`);
+    } else if (pnl <= -0.2) {
+      sellScore += 5;
+      sellReasons.push(`매수가 대비 ${pnl.toFixed(2)}%: 공격 손절`);
+    } else {
+      sellReasons.push(`매수가 대비 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`);
+    }
+  } else {
+    sellReasons.push("보유 포지션 없음");
+  }
+
+  if (entryPrice && sellScore >= 3) {
+    return { side: "SELL", label: "1분 공격 매도", score: sellScore, reason: sellReasons.join(", ") };
+  }
+
+  if (!entryPrice && buyScore >= 4) {
+    return { side: "BUY", label: "1분 공격 매수", score: buyScore, reason: buyReasons.join(", ") };
+  }
+
+  if (entryPrice) {
+    return { side: "WAIT", label: "1분 공격 보유", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
+  }
+
+  return { side: "WAIT", label: buyScore >= 3 ? "1분 공격 관찰" : "1분 공격 대기", score: buyScore, reason: buyReasons.join(", ") };
+}
+
 function buildStrategySignal(args) {
+  if (args.bot?.strategy === "aggressive-scalp") {
+    return buildPoongdeokAggressiveSignal(args);
+  }
+
   if (args.bot?.strategy === "balanced-mean-reversion") {
     return buildGagokSignal(args);
   }
@@ -416,7 +560,10 @@ export async function evaluateBot(previousState, botConfig) {
 
   if (!alreadyProcessed && signal.side === "SELL" && nextState.btc > 0) {
     const equityBefore = nextState.cash + nextState.btc * price;
-    const fullExit = bot.strategy === "balanced-mean-reversion" || bot.strategy === "trend-pullback";
+    const fullExit =
+      bot.strategy === "balanced-mean-reversion" ||
+      bot.strategy === "trend-pullback" ||
+      bot.strategy === "aggressive-scalp";
     const exitPlan = fullExit ? { baseBtc: nextState.btc, remainingParts: 1 } : getActiveExitPlan(state, nextState.btc);
     const trancheAmount = fullExit ? nextState.btc : exitPlan.baseBtc / SELL_SPLIT_PARTS;
     const avgEntryBefore = nextState.avg_entry;

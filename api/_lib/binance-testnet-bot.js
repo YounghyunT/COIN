@@ -12,7 +12,7 @@ import { evaluateBot } from "./strategy.js";
 
 export const BINANCE_TESTNET_BOT_ID = "binance-testnet-gagok-v1";
 const EXECUTION_SYMBOL = "BTCUSDC";
-const SIGNAL_BOT_ID = "gagok-daegwang-v1";
+const SIGNAL_BOT_ID = "poongdeok-xi-v1";
 const LEVERAGE = 25;
 const MARGIN_USAGE = 0.98;
 const BTC_DUST = 0.00000001;
@@ -102,7 +102,7 @@ function buildTradeFromOrder({ side, order, price, reason, positionPct }) {
   };
 }
 
-export async function runBinanceTestnetGagokTick(previousState) {
+export async function runBinanceTestnetPoongdeokTick(previousState) {
   const signalBot = getBotConfig(SIGNAL_BOT_ID);
   const [account, position, symbolInfo, executionPrice] = await Promise.all([
     getBinanceAccount(),
@@ -162,7 +162,7 @@ export async function runBinanceTestnetGagokTick(previousState) {
       last_signal: {
         ...result.signal,
         botId: BINANCE_TESTNET_BOT_ID,
-        botName: "Binance Testnet 가곡대광v1.0",
+        botName: "Binance Testnet 풍덕자이v1.0",
         signalBotId: SIGNAL_BOT_ID,
         signalSymbol: "BTCUSDT",
         executionSymbol: EXECUTION_SYMBOL,

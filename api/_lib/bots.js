@@ -2,10 +2,10 @@ export const BOTS = [
   {
     id: "poongdeok-xi-v1",
     name: "풍덕자이v1.0",
-    interval: "15m",
+    interval: "1m",
     candleLimit: 240,
     initialCash: 50000,
-    strategy: "trend-pullback",
+    strategy: "aggressive-scalp",
   },
   {
     id: "gagok-daegwang-v1",
@@ -17,11 +17,11 @@ export const BOTS = [
   },
   {
     id: "binance-testnet-gagok-v1",
-    name: "Binance Testnet 가곡대광v1.0",
-    interval: "15m",
+    name: "Binance Testnet 풍덕자이v1.0",
+    interval: "1m",
     candleLimit: 240,
     initialCash: 5000,
-    strategy: "binance-testnet-gagok",
+    strategy: "binance-testnet-poongdeok",
   },
 ];
 

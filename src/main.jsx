@@ -2,16 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
-  Bell,
   Bot,
-  CheckCircle2,
   CircleDollarSign,
   History,
-  Pause,
-  Play,
   Radio,
   Send,
-  Settings2,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -52,13 +47,13 @@ const BOT_PROFILES = [
     id: "poongdeok-xi-v1",
     name: "풍덕자이v1.0",
     status: "운영 중",
-    interval: "15분봉",
-    style: "추세 눌림·돌파형",
-    helper: "15분봉 추세와 눌림목을 함께 보는 모의투자 봇",
+    interval: "1분봉",
+    style: "공격 스캘핑형",
+    helper: "1분봉 반등·돌파를 빠르게 체결하는 공격 테스트 봇",
     ruleCards: [
-      ["봇 판단 기준", "15분봉 완성봉", "EMA 9/21/55 정배열 · RSI 추세 지속"],
-      ["진입 방식", "눌림+돌파", "EMA 21 눌림 또는 최근 24개 15분봉 고점 돌파 확인"],
-      ["청산 설계", "+0.9% / -0.55%", "보유 현금의 약 98% 진입 후 익절 또는 손절 시 전량 청산"],
+      ["봇 판단 기준", "1분봉 완성봉", "RSI 14 · EMA 9/21 · 볼린저밴드 · 단기 모멘텀"],
+      ["진입 방식", "반등+돌파", "과매도 반등, EMA 재돌파, 최근 10개 1분봉 고점 돌파를 공격적으로 반영"],
+      ["청산 설계", "+0.4% / -0.2%", "보유 현금의 약 98% 진입 후 익절 또는 손절 시 전량 청산"],
     ],
   },
   {
@@ -1239,70 +1234,6 @@ function PaperTrading({ lastPrice, signal, onPositionChange }) {
   );
 }
 
-function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
-  const [enabled, setEnabled] = useState(false);
-  const [status, setStatus] = useState("Vercel 환경변수 설정 후 전송 가능");
-  const lastSentRef = useRef(null);
-
-  async function sendSignal(mode = "manual") {
-    setStatus("전송 중...");
-    try {
-      const response = await fetch("/api/telegram-signal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          signal: signal.label,
-          price: lastPrice,
-          reason: `[전략 신호] ${signal.reason}`,
-          timeframe: "15분봉",
-          trend: `${trend.label}: ${trend.reason}`,
-          timestamp: new Date().toISOString(),
-        }),
-      });
-      if (!response.ok) throw new Error("텔레그램 API 응답 실패");
-      setStatus(mode === "auto" ? "공격 테스트 신호를 자동 전송했습니다." : "텔레그램으로 신호를 보냈습니다.");
-    } catch (error) {
-      setStatus("전송 실패: 환경변수 또는 배포 API를 확인하세요.");
-    }
-  }
-
-  useEffect(() => {
-    if (!enabled || signal.side === "WAIT" || !lastPrice || !signalTime) return;
-
-    const signalKey = `${signal.side}-${signalTime}`;
-    if (lastSentRef.current === signalKey) return;
-
-    lastSentRef.current = signalKey;
-    sendSignal("auto");
-  }, [enabled, signal, lastPrice, signalTime]);
-
-  return (
-    <section className="panel">
-      <div className="section-title">
-        <Bot size={18} />
-        <span>텔레그램 신호</span>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
-        <div>
-          <div className="text-sm font-medium text-slate-200">전략 알림 {enabled ? "켜짐" : "대기"}</div>
-          <div className="text-xs text-slate-500">{status}</div>
-        </div>
-        <button className={`toggle ${enabled ? "on" : ""}`} onClick={() => setEnabled((value) => !value)}>
-          {enabled ? <Play size={15} /> : <Pause size={15} />}
-        </button>
-      </div>
-      <button className="mt-4 w-full justify-center action-button neutral" onClick={() => sendSignal("manual")}>
-        <Send size={17} />
-        전략 신호 테스트 전송
-      </button>
-      <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
-        알림은 선택한 봇의 15분봉 RSI, EMA, 모멘텀, 20일 이동평균선, 공포·탐욕 지수를 종합해 보냅니다. Vercel 프로젝트에{" "}
-        <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>를 등록하면 실제 봇 메시지를 보냅니다.
-      </div>
-    </section>
-  );
-}
-
 function BinanceTestnetPanel({ status, botState }) {
   const account = status.status?.account;
   const positions = status.status?.positions ?? [];
@@ -1333,9 +1264,16 @@ function BinanceTestnetPanel({ status, botState }) {
           {status.error
             ? status.error
           : status.status
-              ? `${status.status.mode.toUpperCase()} · 가곡대광v1.0 · BTCUSDC 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
+              ? `${status.status.mode.toUpperCase()} · 풍덕자이v1.0 · BTCUSDC 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
               : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
         </div>
+      </div>
+      <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
+        <div className="mb-1 flex items-center gap-2 font-semibold text-slate-200">
+          <Send size={15} />
+          자동매매 실행 알림
+        </div>
+        Binance Testnet에서 BTCUSDC 진입 또는 청산 주문이 체결되면 텔레그램으로 체결가, 수량, 전략명, 사유를 전송합니다.
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <IndicatorCard
@@ -1368,7 +1306,7 @@ function BinanceTestnetPanel({ status, botState }) {
                 {position.symbol} {position.positionAmt > 0 ? "LONG" : "SHORT"} · 수량 {position.positionAmt} · 진입 ${formatUsd(position.entryPrice)} · 청산가 ${formatUsd(position.liquidationPrice)}
               </div>
             ))
-          : "현재 BTCUSDC 테스트넷 포지션은 없습니다. 가곡대광 매수 신호가 나오면 cron 실행 시 자동 진입합니다."}
+          : "포지션 없음. 독립 실행 봇이 풍덕자이 전략 조건을 만족하면 자동 진입합니다."}
       </div>
       <div className="mt-4 rounded-md border border-white/10">
         <div className="border-b border-white/10 px-4 py-3 text-sm font-semibold text-slate-200">테스트넷 체결현황</div>
@@ -1466,7 +1404,7 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
         <IndicatorCard
           title="평균 매수가"
           value={avgEntry ? `$${formatUsd(avgEntry)}` : "--"}
-          caption={activeBot.id === "gagok-daegwang-v1" ? "익절 +1.0% / 손절 -0.7%" : "익절 +0.9% / 손절 -0.55%"}
+          caption={activeBot.id === "gagok-daegwang-v1" ? "익절 +1.0% / 손절 -0.7%" : "익절 +0.4% / 손절 -0.2%"}
         />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
@@ -1544,75 +1482,14 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
 function App() {
   const [interval, setInterval] = useState("1d");
   const [selectedBotId, setSelectedBotId] = useState(BOT_PROFILES[0].id);
-  const [alertBotId, setAlertBotId] = useState(BOT_PROFILES[0].id);
   const botState = useBotState(selectedBotId);
   const binanceStatus = useBinanceTestnetStatus();
   const binanceBotState = useBotState("binance-testnet-gagok-v1");
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
-  const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
-  const { candles: gagokAlertCandles, status: gagokAlertStatus } = useMarketData("15m");
-  const { candles: trendCandles, status: trendStatus } = useMarketData(TREND_FILTER_INTERVAL);
-  const { candles: dailyCandles } = useMarketData(DAILY_FILTER_INTERVAL);
-  const { candles: indicatorCandles4h } = useMarketData("4h");
-  const { candles: indicatorCandles1h } = useMarketData("1h");
-  const { candles: indicatorCandles1d } = useMarketData("1d");
-  const fearGreed = useFearGreedIndex();
   const indicators = useMemo(() => buildIndicators(candles), [candles]);
-  const alertIndicators = useMemo(() => buildIndicators(alertCandles), [alertCandles]);
-  const gagokAlertIndicators = useMemo(() => buildIndicators(gagokAlertCandles), [gagokAlertCandles]);
-  const trendIndicators = useMemo(() => buildIndicators(trendCandles), [trendCandles]);
-  const indicator4h = useMemo(() => buildIndicators(indicatorCandles4h), [indicatorCandles4h]);
-  const indicator1h = useMemo(() => buildIndicators(indicatorCandles1h), [indicatorCandles1h]);
-  const indicator1d = useMemo(() => buildIndicators(indicatorCandles1d), [indicatorCandles1d]);
   const signal = useMemo(() => buildSignal(candles, indicators), [candles, indicators]);
-  const trendFilter = useMemo(() => buildTrendFilter(trendCandles, trendIndicators), [trendCandles, trendIndicators]);
-  const botEntryPrice = botState.state?.avg_entry ? Number(botState.state.avg_entry) : null;
-  const alertSignal = useMemo(
-    () => {
-      const entryPrice = selectedBotId === alertBotId ? botEntryPrice : null;
-      if (alertBotId === "gagok-daegwang-v1") {
-        return buildGagokAlertSignal({
-          alertCandles: gagokAlertCandles,
-          alertIndicators: gagokAlertIndicators,
-          dailyCandles,
-          fearGreed,
-          entryPrice,
-        });
-      }
-
-      return buildStrategySignal({
-        alertCandles,
-        alertIndicators,
-        dailyCandles,
-        fearGreed,
-        entryPrice,
-      });
-    },
-    [
-      alertBotId,
-      alertCandles,
-      alertIndicators,
-      gagokAlertCandles,
-      gagokAlertIndicators,
-      dailyCandles,
-      fearGreed,
-      botEntryPrice,
-      selectedBotId,
-    ],
-  );
   const last = candles.at(-1);
-  const selectedAlertCandles = alertBotId === "gagok-daegwang-v1" ? gagokAlertCandles : alertCandles;
-  const selectedAlertStatus = alertBotId === "gagok-daegwang-v1" ? gagokAlertStatus : alertStatus;
-  const selectedAlertLast = selectedAlertCandles.at(-1);
-  const activeAlertBot = BOT_PROFILES.find((bot) => bot.id === alertBotId) ?? BOT_PROFILES[0];
-  const lastRsi = indicator4h.rsi.at(-1);
-  const lastMacd = indicator1h.macd.at(-1);
-  const lastEmaFast = indicator4h.emaFast.at(-1);
-  const lastEmaSlow = indicator4h.emaSlow.at(-1);
-  const lastBand = indicator1d.bollinger.at(-1);
-  const dailyMa20 = useMemo(() => sma(dailyCandles.map((candle) => candle.close), 20).at(-1), [dailyCandles]);
-  const ma20Gap = dailyMa20 && selectedAlertLast ? ((selectedAlertLast.close - dailyMa20) / dailyMa20) * 100 : null;
 
   return (
     <main className="min-h-screen bg-[#0b0f12] text-slate-100">
@@ -1637,122 +1514,29 @@ function App() {
           </div>
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <div className="panel overflow-hidden p-0">
-            <div className="chart-head">
-              <div>
-                <div className="text-xs text-slate-500">BTCUSDT</div>
-                <div className="text-3xl font-semibold">${formatUsd(last?.close)}</div>
-              </div>
-              <div className={`decision ${signal.side.toLowerCase()}`}>
-                {signal.side === "BUY" ? <TrendingUp size={18} /> : signal.side === "SELL" ? <TrendingDown size={18} /> : <Activity size={18} />}
-                {signal.label}
-              </div>
+        <section className="panel overflow-hidden p-0">
+          <div className="chart-head">
+            <div>
+              <div className="text-xs text-slate-500">BTCUSDT</div>
+              <div className="text-3xl font-semibold">${formatUsd(last?.close)}</div>
             </div>
-            <BinanceChart
-              candles={candles}
-              indicators={indicators}
-              interval={interval}
-              onIntervalChange={setInterval}
-              status={status}
-            />
+            <div className={`decision ${signal.side.toLowerCase()}`}>
+              {signal.side === "BUY" ? <TrendingUp size={18} /> : signal.side === "SELL" ? <TrendingDown size={18} /> : <Activity size={18} />}
+              {signal.label}
+            </div>
           </div>
-
-          <aside className="flex flex-col gap-4">
-            <section className="panel">
-              <div className="section-title">
-                <Bell size={18} />
-                <span>전략 알림 판단</span>
-              </div>
-              <div className="bot-switcher compact" role="tablist" aria-label="Alert bot selector">
-                {BOT_PROFILES.map((bot) => (
-                  <button
-                    className={`bot-switch ${bot.id === alertBotId ? "active" : ""}`}
-                    key={bot.id}
-                    onClick={() => setAlertBotId(bot.id)}
-                    type="button"
-                  >
-                    <span>{bot.name}</span>
-                    <small>{bot.interval} 알림 기준</small>
-                  </button>
-                ))}
-              </div>
-              <div className={`signal-box ${alertSignal.side.toLowerCase()}`}>
-                <div className="text-sm text-slate-400">
-                  {activeAlertBot.id === "gagok-daegwang-v1"
-                    ? "15분봉 RSI + Bollinger + EMA 20/60"
-                    : "15분봉 EMA 9/21/55 + RSI + 눌림·돌파"}
-                </div>
-                <div className="mt-1 text-3xl font-semibold">{alertSignal.label}</div>
-                <div className="mt-3 text-sm leading-6 text-slate-300">{alertSignal.reason}</div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <IndicatorCard title="전략 점수" value={alertSignal.score.toFixed(1)} caption={selectedAlertStatus.message} />
-                <IndicatorCard title="공포·탐욕" value={fearGreed.value ?? "--"} caption={`${fearGreed.label} · ${fearGreed.status}`} />
-                <IndicatorCard title="20일선 대비" value={ma20Gap !== null ? `${ma20Gap >= 0 ? "+" : ""}${ma20Gap.toFixed(1)}%` : "--"} caption={dailyMa20 ? `MA20 $${formatUsd(dailyMa20, 0)}` : "계산 중"} />
-                <IndicatorCard
-                  title="평균 매수가"
-                  value={selectedBotId === alertBotId && botEntryPrice ? `$${formatUsd(botEntryPrice)}` : "--"}
-                  caption={
-                    activeAlertBot.id === "gagok-daegwang-v1"
-                      ? "익절 +1.0% / 손절 -0.7%"
-                      : selectedBotId === alertBotId && botEntryPrice
-                        ? "익절 +0.9% / 손절 -0.55%"
-                        : "선택 봇 보유 포지션 없음"
-                  }
-                />
-              </div>
-            </section>
-            <TelegramPanel signal={alertSignal} lastPrice={selectedAlertLast?.close} signalTime={selectedAlertLast?.time} trend={trendFilter} />
-          </aside>
+          <BinanceChart
+            candles={candles}
+            indicators={indicators}
+            interval={interval}
+            onIntervalChange={setInterval}
+            status={status}
+          />
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-4">
-          <IndicatorCard
-            title="RSI 14"
-            value={lastRsi ? lastRsi.toFixed(1) : "--"}
-            caption={`4시간봉 · ${lastRsi > 70 ? "과매수 구간" : lastRsi < 30 ? "과매도 구간" : "중립 구간"}`}
-            tone={lastRsi > 70 ? "text-rose-400" : lastRsi < 30 ? "text-emerald-400" : "text-slate-50"}
-          />
-          <IndicatorCard
-            title="MACD"
-            value={lastMacd ? lastMacd.histogram.toFixed(2) : "--"}
-            caption="1시간봉 히스토그램"
-            tone={lastMacd?.histogram > 0 ? "text-emerald-400" : "text-rose-400"}
-          />
-          <IndicatorCard title="EMA 9 / 21" value={`${formatUsd(lastEmaFast, 0)} / ${formatUsd(lastEmaSlow, 0)}`} caption="4시간봉 추세" />
-          <IndicatorCard title="Bollinger" value={lastBand ? `${formatUsd(lastBand.lower, 0)} - ${formatUsd(lastBand.upper, 0)}` : "--"} caption="일봉 20, 2σ 밴드" />
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
           <AiBotPanel botState={botState} selectedBotId={selectedBotId} onBotChange={setSelectedBotId} />
-          <div className="flex flex-col gap-4">
-            <BinanceTestnetPanel status={binanceStatus} botState={binanceBotState} />
-            <section className="panel">
-              <div className="section-title">
-                <Settings2 size={18} />
-                <span>배포 체크</span>
-              </div>
-              <div className="mt-4 space-y-3 text-sm text-slate-400">
-                <div className="check-row">
-                  <CheckCircle2 size={16} />
-                  GitHub 저장소 연결 후 Vercel Import
-                </div>
-                <div className="check-row">
-                  <CheckCircle2 size={16} />
-                  Build Command: <code>npm run build</code>
-                </div>
-                <div className="check-row">
-                  <CheckCircle2 size={16} />
-                  Binance 테스트넷 환경변수 4개 등록
-                </div>
-                <div className="check-row">
-                  <CheckCircle2 size={16} />
-                  텔레그램 환경변수 2개 등록
-                </div>
-              </div>
-            </section>
-          </div>
+          <BinanceTestnetPanel status={binanceStatus} botState={binanceBotState} />
         </section>
       </div>
     </main>
