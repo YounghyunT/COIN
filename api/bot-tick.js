@@ -37,11 +37,11 @@ async function sendExecutionTelegram({ bot, signal, trade, order }) {
 
   const text = [
     `[Y & K] ${bot.name}: ${trade.side} 체결`,
-    `Symbol: ${order?.symbol ?? "BTCUSDC"}`,
+    `Symbol: ${order?.symbol ?? "BTCUSDT"}`,
     `Mode: Binance Futures Testnet`,
     `Leverage: 25x`,
     `Qty: ${Number(trade.amount).toFixed(6)} BTC`,
-    `Avg Price: ${Number(trade.price).toLocaleString("en-US")} USDC`,
+    `Avg Price: ${Number(trade.price).toLocaleString("en-US")} USDT`,
     `Strategy: 풍덕자이v1.0`,
     `Signal: ${signal.label}`,
     `Reason: ${trade.reason}`,

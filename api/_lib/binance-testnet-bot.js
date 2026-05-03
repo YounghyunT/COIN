@@ -12,7 +12,7 @@ import {
 import { evaluateBot } from "./strategy.js";
 
 export const BINANCE_TESTNET_BOT_ID = "binance-testnet-gagok-v1";
-const EXECUTION_SYMBOL = "BTCUSDC";
+const EXECUTION_SYMBOL = "BTCUSDT";
 const SIGNAL_BOT_ID = "poongdeok-xi-v1";
 const LEVERAGE = 25;
 const MARGIN_USAGE = 0.98;
@@ -46,14 +46,14 @@ function getMinNotionalFilter(symbolInfo) {
 }
 
 function buildSyntheticState({ previousState, account, position }) {
-  const usdc = getAssetBalance(account, "USDC");
+  const usdt = getAssetBalance(account, "USDT");
   const positionAmt = Number(position.positionAmt ?? 0);
   return {
     ...previousState,
-    cash: usdc.availableBalance,
+    cash: usdt.availableBalance,
     btc: Math.abs(positionAmt),
     avg_entry: Math.abs(positionAmt) > BTC_DUST ? Number(position.entryPrice) : null,
-    equity: usdc.walletBalance + Number(position.unRealizedProfit ?? 0),
+    equity: usdt.walletBalance + Number(position.unRealizedProfit ?? 0),
   };
 }
 
@@ -63,20 +63,20 @@ async function ensureTradingSettings() {
 }
 
 async function buildBuyQuantity({ account, price, symbolInfo }) {
-  const usdc = getAssetBalance(account, "USDC");
+  const usdt = getAssetBalance(account, "USDT");
   const lot = getLotFilter(symbolInfo);
   const minNotional = getMinNotionalFilter(symbolInfo);
-  const notional = usdc.availableBalance * MARGIN_USAGE * LEVERAGE;
+  const notional = usdt.availableBalance * MARGIN_USAGE * LEVERAGE;
   const rawQuantity = notional / price;
   const quantity = floorToStep(rawQuantity, lot.stepSize ?? "0.001");
   const minQty = Number(lot.minQty ?? 0);
   const minNotionalValue = Number(minNotional.notional ?? minNotional.minNotional ?? 0);
 
   if (!Number.isFinite(quantity) || quantity <= 0 || quantity < minQty) {
-    throw new Error(`BTCUSDC quantity is too small: ${quantity}`);
+    throw new Error(`${EXECUTION_SYMBOL} quantity is too small: ${quantity}`);
   }
   if (minNotionalValue && quantity * price < minNotionalValue) {
-    throw new Error(`BTCUSDC notional is below minimum: ${(quantity * price).toFixed(2)}`);
+    throw new Error(`${EXECUTION_SYMBOL} notional is below minimum: ${(quantity * price).toFixed(2)}`);
   }
 
   return quantity;
@@ -173,16 +173,16 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
   }
 
   const finalHasPosition = Math.abs(Number(positionAfter.positionAmt ?? 0)) > BTC_DUST;
-  const finalUsdc = getAssetBalance(accountAfter, "USDC");
+  const finalUsdt = getAssetBalance(accountAfter, "USDT");
 
   return {
     state: {
       ...result.state,
       id: BINANCE_TESTNET_BOT_ID,
-      cash: finalUsdc.availableBalance,
+      cash: finalUsdt.availableBalance,
       btc: Math.abs(Number(positionAfter.positionAmt ?? 0)),
       avg_entry: finalHasPosition ? Number(positionAfter.entryPrice) : null,
-      equity: finalUsdc.walletBalance + Number(positionAfter.unRealizedProfit ?? 0),
+      equity: finalUsdt.walletBalance + Number(positionAfter.unRealizedProfit ?? 0),
       last_signal: {
         ...result.signal,
         botId: BINANCE_TESTNET_BOT_ID,

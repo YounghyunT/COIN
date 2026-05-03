@@ -1238,9 +1238,9 @@ function BinanceTestnetPanel({ status, botState }) {
   const account = status.status?.account;
   const positions = status.status?.positions ?? [];
   const commissions = status.status?.commissions ?? [];
-  const usdcAsset = account?.assets?.find((asset) => asset.asset === "USDC");
+  const usdtAsset = account?.assets?.find((asset) => asset.asset === "USDT");
   const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
-  const btcUsdcFee = commissions.find((item) => item.symbol === "BTCUSDC");
+  const btcUsdtFee = commissions.find((item) => item.symbol === "BTCUSDT");
   const liveState = botState?.state;
   const lastSignal = liveState?.last_signal;
   const trades = botState?.trades ?? [];
@@ -1256,7 +1256,7 @@ function BinanceTestnetPanel({ status, botState }) {
         <span>Binance Futures Testnet</span>
       </div>
       <div className={`signal-box mt-4 ${status.error ? "sell" : status.loading ? "wait" : "buy"}`}>
-        <div className="text-sm text-slate-400">BTCUSDC 자동매매 테스트넷</div>
+        <div className="text-sm text-slate-400">BTCUSDT 자동매매 테스트넷</div>
         <div className="mt-1 text-2xl font-semibold">
           {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : lastSignal?.label || "연결됨"}
         </div>
@@ -1264,7 +1264,7 @@ function BinanceTestnetPanel({ status, botState }) {
           {status.error
             ? status.error
           : status.status
-              ? `${status.status.mode.toUpperCase()} · 풍덕자이v1.0 · BTCUSDC 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
+              ? `${status.status.mode.toUpperCase()} · 풍덕자이v1.0 · BTCUSDT 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
               : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
         </div>
       </div>
@@ -1273,18 +1273,18 @@ function BinanceTestnetPanel({ status, botState }) {
           <Send size={15} />
           자동매매 실행 알림
         </div>
-        Binance Testnet에서 BTCUSDC 진입 또는 청산 주문이 체결되면 텔레그램으로 체결가, 수량, 전략명, 사유를 전송합니다.
+        Binance Testnet에서 BTCUSDT 진입 또는 청산 주문이 체결되면 텔레그램으로 체결가, 수량, 전략명, 사유를 전송합니다.
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <IndicatorCard
-          title="USDC 사용 가능"
-          value={usdcAsset ? `$${formatUsd(usdcAsset.availableBalance)}` : "--"}
-          caption="BTCUSDC 주문 기준 잔고"
+          title="USDT 사용 가능"
+          value={usdtAsset ? `$${formatUsd(usdtAsset.availableBalance)}` : "--"}
+          caption="BTCUSDT 주문 기준 잔고"
         />
         <IndicatorCard
-          title="USDC 지갑 잔고"
-          value={usdcAsset ? `$${formatUsd(usdcAsset.walletBalance)}` : "--"}
-          caption="테스트넷 USDC wallet"
+          title="USDT 지갑 잔고"
+          value={usdtAsset ? `$${formatUsd(usdtAsset.walletBalance)}` : "--"}
+          caption="테스트넷 USDT wallet"
         />
         <IndicatorCard
           title="미실현 손익"
@@ -1292,11 +1292,11 @@ function BinanceTestnetPanel({ status, botState }) {
           caption="테스트넷 포지션 기준"
           tone={Number(account?.totalUnrealizedProfit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
         />
-        <IndicatorCard title="BTCUSDC 수수료" value={btcUsdcFee?.ok ? `${(btcUsdcFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdcFee)} />
+        <IndicatorCard title="BTCUSDT 수수료" value={btcUsdtFee?.ok ? `${(btcUsdtFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdtFee)} />
         <IndicatorCard
           title="마지막 실행가"
           value={lastSignal?.executionPrice ? `$${formatUsd(lastSignal.executionPrice)}` : "--"}
-          caption="BTCUSDC 테스트넷 시장가"
+          caption="BTCUSDT 테스트넷 시장가"
         />
       </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">

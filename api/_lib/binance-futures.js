@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 const DEFAULT_TESTNET_BASE_URL = "https://testnet.binancefuture.com";
-const DEFAULT_SYMBOLS = ["BTCUSDC"];
+const DEFAULT_SYMBOLS = ["BTCUSDT"];
 
 function getBinanceConfig() {
   const apiKey = process.env.BINANCE_TESTNET_API_KEY;
@@ -84,13 +84,13 @@ async function optionalSignedRequest(path, options) {
 
 function compactAccount(account) {
   const assets = account?.assets ?? [];
-  const usdc = assets.find((asset) => asset.asset === "USDC");
+  const usdt = assets.find((asset) => asset.asset === "USDT");
   return {
     totalWalletBalance: Number(account?.totalWalletBalance ?? 0),
     totalUnrealizedProfit: Number(account?.totalUnrealizedProfit ?? 0),
-    availableBalance: Number(usdc?.availableBalance ?? 0),
+    availableBalance: Number(usdt?.availableBalance ?? 0),
     assets: assets
-      .filter((asset) => ["USDC"].includes(asset.asset))
+      .filter((asset) => ["USDT"].includes(asset.asset))
       .map((asset) => ({
         asset: asset.asset,
         walletBalance: Number(asset.walletBalance ?? 0),
