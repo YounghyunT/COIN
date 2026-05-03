@@ -350,16 +350,16 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
   const shortMomentum = momentumBase ? ((price - momentumBase.close) / momentumBase.close) * 100 : 0;
   const lowerBandRebound = band ? prevClose <= band.lower * 1.001 && price > band.lower : false;
   const nearLowerBand = band ? price <= band.lower * 1.006 : false;
-  const emaReclaim = emaFast && emaMid ? prevClose < emaFast && price >= emaFast && price >= emaMid * 0.998 : false;
-  const recentHigh = Math.max(...alertCandles.slice(-10, -1).map((candle) => candle.high ?? candle.close));
-  const microBreakout = Number.isFinite(recentHigh) && price >= recentHigh * 0.9995;
+  const emaReclaim = emaFast && emaMid ? prevClose < emaFast && price >= emaFast && price >= emaMid * 0.996 : false;
+  const recentHigh = Math.max(...alertCandles.slice(-6, -1).map((candle) => candle.high ?? candle.close));
+  const microBreakout = Number.isFinite(recentHigh) && price >= recentHigh * 0.999;
   const buyReasons = [];
   const sellReasons = [];
   let buyScore = 0;
   let sellScore = 0;
 
   if (fearGreedValue !== null && fearGreedValue !== undefined) {
-    if (fearGreedValue <= 80) {
+    if (fearGreedValue <= 95) {
       buyScore += 1;
       buyReasons.push(`공포·탐욕 ${fearGreedValue}: 공격 테스트 매수 허용`);
     }
@@ -370,7 +370,7 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
   }
 
   if (ma20Gap !== null) {
-    if (ma20Gap >= -12 && ma20Gap <= 12) {
+    if (ma20Gap >= -20 && ma20Gap <= 20) {
       buyScore += 1;
       buyReasons.push(`20일선 대비 ${ma20Gap.toFixed(1)}%: 테스트 허용 범위`);
     } else if (ma20Gap > 16) {
@@ -385,24 +385,24 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
     if (rsi14 <= 38) {
       buyScore += 3;
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 1분봉 과매도 반등`);
-    } else if (rsi14 <= 55) {
+    } else if (rsi14 <= 60) {
       buyScore += 2;
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 공격 진입 가능`);
-    } else if (rsi14 <= 64) {
+    } else if (rsi14 <= 72) {
       buyScore += 1;
-      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 단기 추세 추격`);
+      buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 초공격 추세 추격`);
     } else {
       buyReasons.push(`RSI(14) ${rsi14.toFixed(1)}`);
     }
 
-    if (rsi14 >= 70) {
+    if (rsi14 >= 76) {
       sellScore += 2;
       sellReasons.push(`RSI(14) ${rsi14.toFixed(1)}: 단기 과열`);
     }
   }
 
   if (emaFast && emaMid) {
-    if (price >= emaFast && emaFast >= emaMid * 0.999) {
+    if (price >= emaFast * 0.999 && emaFast >= emaMid * 0.997) {
       buyScore += 2;
       buyReasons.push("EMA 9/21 단기 우위");
     } else if (emaReclaim) {
@@ -424,15 +424,20 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
 
   if (microBreakout) {
     buyScore += 2;
-    buyReasons.push("최근 10개 1분봉 고점 돌파");
+    buyReasons.push("최근 6개 1분봉 고점 돌파");
   }
 
-  if (oneCandleMomentum >= 0.04 || shortMomentum >= 0.08) {
+  if (oneCandleMomentum >= -0.03 || shortMomentum >= -0.06) {
     buyScore += 1;
     buyReasons.push(`단기 모멘텀 ${shortMomentum >= 0 ? "+" : ""}${shortMomentum.toFixed(2)}%`);
-  } else if (oneCandleMomentum <= -0.08 || shortMomentum <= -0.16) {
+  } else if (oneCandleMomentum <= -0.12 || shortMomentum <= -0.22) {
     sellScore += 2;
     sellReasons.push(`단기 모멘텀 ${shortMomentum.toFixed(2)}%`);
+  }
+
+  if (!entryPrice) {
+    buyScore += 1;
+    buyReasons.push("포지션 없음: 초공격 테스트 진입 가산");
   }
 
   if (pnl !== null) {
@@ -453,15 +458,15 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
     return { side: "SELL", label: "1분 공격 매도", score: sellScore, reason: sellReasons.join(", ") };
   }
 
-  if (!entryPrice && buyScore >= 4) {
-    return { side: "BUY", label: "1분 공격 매수", score: buyScore, reason: buyReasons.join(", ") };
+  if (!entryPrice && buyScore >= 2) {
+    return { side: "BUY", label: "1분 초공격 매수", score: buyScore, reason: buyReasons.join(", ") };
   }
 
   if (entryPrice) {
     return { side: "WAIT", label: "1분 공격 보유", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
   }
 
-  return { side: "WAIT", label: buyScore >= 3 ? "1분 공격 관찰" : "1분 공격 대기", score: buyScore, reason: buyReasons.join(", ") };
+  return { side: "WAIT", label: buyScore >= 1 ? "1분 초공격 관찰" : "1분 공격 대기", score: buyScore, reason: buyReasons.join(", ") };
 }
 
 function buildStrategySignal(args) {
