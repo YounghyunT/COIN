@@ -1313,7 +1313,6 @@ function BinanceTestnetPanel({ status, botState }) {
   const liveState = botState?.state;
   const lastSignal = liveState?.last_signal;
   const trades = botState?.trades ?? [];
-  const basisBps = Number(lastSignal?.basisBps);
   const feeLabel = (item) =>
     item?.ok
       ? `Maker ${(item.makerCommissionRate * 100).toFixed(4)}% / Taker ${(item.takerCommissionRate * 100).toFixed(4)}%`
@@ -1357,10 +1356,9 @@ function BinanceTestnetPanel({ status, botState }) {
         />
         <IndicatorCard title="BTCUSDC 수수료" value={btcUsdcFee?.ok ? `${(btcUsdcFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdcFee)} />
         <IndicatorCard
-          title="USDT-USDC 괴리"
-          value={Number.isFinite(basisBps) ? `${basisBps >= 0 ? "+" : ""}${basisBps.toFixed(2)}bp` : "--"}
-          caption={lastSignal?.basisAllowed === false ? "허용치 초과, 진입 보류" : "허용치 5bp 이내 진입"}
-          tone={lastSignal?.basisAllowed === false ? "text-rose-400" : "text-emerald-400"}
+          title="마지막 실행가"
+          value={lastSignal?.executionPrice ? `$${formatUsd(lastSignal.executionPrice)}` : "--"}
+          caption="BTCUSDC 테스트넷 시장가"
         />
       </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
@@ -1370,7 +1368,7 @@ function BinanceTestnetPanel({ status, botState }) {
                 {position.symbol} {position.positionAmt > 0 ? "LONG" : "SHORT"} · 수량 {position.positionAmt} · 진입 ${formatUsd(position.entryPrice)} · 청산가 ${formatUsd(position.liquidationPrice)}
               </div>
             ))
-          : "현재 BTCUSDC 테스트넷 포지션은 없습니다. 가곡대광 매수 신호와 괴리율 필터를 통과하면 cron 실행 시 자동 진입합니다."}
+          : "현재 BTCUSDC 테스트넷 포지션은 없습니다. 가곡대광 매수 신호가 나오면 cron 실행 시 자동 진입합니다."}
       </div>
       <div className="mt-4 rounded-md border border-white/10">
         <div className="border-b border-white/10 px-4 py-3 text-sm font-semibold text-slate-200">테스트넷 체결현황</div>

@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 
 const DEFAULT_TESTNET_BASE_URL = "https://testnet.binancefuture.com";
 const DEFAULT_SYMBOLS = ["BTCUSDC"];
-const PUBLIC_PRICE_BASE_URL = "https://api.binance.com";
 
 function getBinanceConfig() {
   const apiKey = process.env.BINANCE_TESTNET_API_KEY;
@@ -171,13 +170,6 @@ export async function getBinancePosition(symbol) {
 export async function getBinanceTickerPrice(symbol) {
   const config = assertTestnetConfig();
   const payload = await binanceRequest("/fapi/v1/ticker/price", { ...config, params: { symbol } });
-  return Number(payload.price);
-}
-
-export async function getPublicTickerPrice(symbol) {
-  const response = await fetch(`${PUBLIC_PRICE_BASE_URL}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(`Binance public ticker ${response.status}: ${payload?.msg || "failed"}`);
   return Number(payload.price);
 }
 
