@@ -218,7 +218,20 @@ export async function placeBinanceMarketOrder({ symbol, side, quantity, reduceOn
       type: "MARKET",
       quantity,
       reduceOnly: reduceOnly ? "true" : undefined,
+      newOrderRespType: "RESULT",
       newClientOrderId: `yk_${Date.now()}`,
+    },
+  });
+}
+
+export async function getBinanceOrder({ symbol, orderId }) {
+  const config = assertTestnetConfig();
+  return binanceRequest("/fapi/v1/order", {
+    ...config,
+    signed: true,
+    params: {
+      symbol,
+      orderId,
     },
   });
 }

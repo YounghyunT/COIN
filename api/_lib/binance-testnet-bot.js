@@ -2,6 +2,7 @@ import { getBotConfig } from "./bots.js";
 import {
   getBinanceAccount,
   getBinanceExchangeSymbol,
+  getBinanceOrder,
   getBinancePosition,
   getBinanceTickerPrice,
   placeBinanceMarketOrder,
@@ -81,10 +82,23 @@ async function buildBuyQuantity({ account, price, symbolInfo }) {
   return quantity;
 }
 
-function buildTradeFromOrder({ side, order, price, reason, positionPct }) {
+async function getFilledOrder(order) {
+  if (!order?.orderId) return order;
+  try {
+    return await getBinanceOrder({ symbol: order.symbol ?? EXECUTION_SYMBOL, orderId: order.orderId });
+  } catch {
+    return order;
+  }
+}
+
+function buildTradeFromOrder({ side, order, price, reason, positionPct, avgEntryBefore = null }) {
   const executedQty = Number(order.executedQty ?? order.origQty ?? 0);
   const averagePrice = Number(order.avgPrice ?? 0) || price;
   const cashDelta = side === "BUY" ? -(executedQty * averagePrice) : executedQty * averagePrice;
+  const realizedPnl =
+    side === "SELL" && avgEntryBefore ? executedQty * (averagePrice - Number(avgEntryBefore)) : null;
+  const realizedPnlPct =
+    side === "SELL" && avgEntryBefore ? ((averagePrice - Number(avgEntryBefore)) / Number(avgEntryBefore)) * 100 : null;
 
   return {
     side,
@@ -94,9 +108,9 @@ function buildTradeFromOrder({ side, order, price, reason, positionPct }) {
     position_pct: positionPct,
     equity_before: null,
     equity_after: null,
-    avg_entry_before: null,
-    realized_pnl: null,
-    realized_pnl_pct: null,
+    avg_entry_before: avgEntryBefore,
+    realized_pnl: realizedPnl,
+    realized_pnl_pct: realizedPnlPct,
     reason,
     candle_time: Math.floor(Date.now() / 1000),
   };
@@ -115,6 +129,8 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
   const result = await evaluateBot(syntheticState, signalBot);
   let order = null;
   let trade = null;
+  let accountAfter = account;
+  let positionAfter = position;
 
   if (!result.alreadyProcessed) {
     if (!hasPosition && result.signal.side === "BUY") {
@@ -125,6 +141,7 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
         side: "BUY",
         quantity,
       });
+      order = await getFilledOrder(order);
       trade = buildTradeFromOrder({
         side: "BUY",
         order,
@@ -132,6 +149,7 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
         reason: `${result.signal.reason}, Binance Testnet ${EXECUTION_SYMBOL} 25x 진입`,
         positionPct: MARGIN_USAGE,
       });
+      [accountAfter, positionAfter] = await Promise.all([getBinanceAccount(), getBinancePosition(EXECUTION_SYMBOL)]);
     } else if (hasPosition && result.signal.side === "SELL") {
       const lot = getLotFilter(symbolInfo);
       const quantity = floorToStep(Math.abs(Number(position.positionAmt)), lot.stepSize ?? "0.001");
@@ -141,24 +159,30 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
         quantity,
         reduceOnly: true,
       });
+      order = await getFilledOrder(order);
       trade = buildTradeFromOrder({
         side: "SELL",
         order,
         price: executionPrice,
         reason: `${result.signal.reason}, Binance Testnet ${EXECUTION_SYMBOL} 전량 청산`,
         positionPct: 1,
+        avgEntryBefore: Number(position.entryPrice),
       });
+      [accountAfter, positionAfter] = await Promise.all([getBinanceAccount(), getBinancePosition(EXECUTION_SYMBOL)]);
     }
   }
+
+  const finalHasPosition = Math.abs(Number(positionAfter.positionAmt ?? 0)) > BTC_DUST;
+  const finalUsdc = getAssetBalance(accountAfter, "USDC");
 
   return {
     state: {
       ...result.state,
       id: BINANCE_TESTNET_BOT_ID,
-      cash: getAssetBalance(account, "USDC").availableBalance,
-      btc: Math.abs(Number(position.positionAmt ?? 0)),
-      avg_entry: hasPosition ? Number(position.entryPrice) : null,
-      equity: getAssetBalance(account, "USDC").walletBalance + Number(position.unRealizedProfit ?? 0),
+      cash: finalUsdc.availableBalance,
+      btc: Math.abs(Number(positionAfter.positionAmt ?? 0)),
+      avg_entry: finalHasPosition ? Number(positionAfter.entryPrice) : null,
+      equity: finalUsdc.walletBalance + Number(positionAfter.unRealizedProfit ?? 0),
       last_signal: {
         ...result.signal,
         botId: BINANCE_TESTNET_BOT_ID,
@@ -169,6 +193,10 @@ export async function runBinanceTestnetPoongdeokTick(previousState) {
         leverage: LEVERAGE,
         executionPrice,
         orderId: order?.orderId ?? null,
+        orderStatus: order?.status ?? null,
+        orderAvgPrice: order?.avgPrice ?? null,
+        orderExecutedQty: order?.executedQty ?? null,
+        positionAmt: Number(positionAfter.positionAmt ?? 0),
         alreadyProcessed: result.alreadyProcessed,
       },
       updated_at: new Date().toISOString(),
