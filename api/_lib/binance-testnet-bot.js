@@ -4,6 +4,7 @@ import {
   getBinanceExchangeSymbol,
   getBinancePosition,
   getBinanceTickerPrice,
+  getPublicTickerPrice,
   placeBinanceMarketOrder,
   setBinanceLeverage,
   setBinanceMarginType,
@@ -15,6 +16,7 @@ const EXECUTION_SYMBOL = "BTCUSDC";
 const SIGNAL_BOT_ID = "gagok-daegwang-v1";
 const LEVERAGE = 25;
 const MARGIN_USAGE = 0.98;
+const MAX_BASIS_BPS = 5;
 const BTC_DUST = 0.00000001;
 
 function getAssetBalance(account, assetName) {
@@ -104,12 +106,15 @@ function buildTradeFromOrder({ side, order, price, reason, positionPct }) {
 
 export async function runBinanceTestnetGagokTick(previousState) {
   const signalBot = getBotConfig(SIGNAL_BOT_ID);
-  const [account, position, symbolInfo, executionPrice] = await Promise.all([
+  const [account, position, symbolInfo, executionPrice, signalPrice] = await Promise.all([
     getBinanceAccount(),
     getBinancePosition(EXECUTION_SYMBOL),
     getBinanceExchangeSymbol(EXECUTION_SYMBOL),
     getBinanceTickerPrice(EXECUTION_SYMBOL),
+    getPublicTickerPrice("BTCUSDT"),
   ]);
+  const basisBps = ((executionPrice - signalPrice) / signalPrice) * 10000;
+  const basisAllowed = Math.abs(basisBps) <= MAX_BASIS_BPS;
   const hasPosition = Math.abs(Number(position.positionAmt ?? 0)) > BTC_DUST;
   const syntheticState = buildSyntheticState({ previousState, account, position });
   const result = await evaluateBot(syntheticState, signalBot);
@@ -117,7 +122,7 @@ export async function runBinanceTestnetGagokTick(previousState) {
   let trade = null;
 
   if (!result.alreadyProcessed) {
-    if (!hasPosition && result.signal.side === "BUY") {
+    if (!hasPosition && result.signal.side === "BUY" && basisAllowed) {
       await ensureTradingSettings();
       const quantity = await buildBuyQuantity({ account, price: executionPrice, symbolInfo });
       order = await placeBinanceMarketOrder({
@@ -129,7 +134,7 @@ export async function runBinanceTestnetGagokTick(previousState) {
         side: "BUY",
         order,
         price: executionPrice,
-        reason: `${result.signal.reason}, Binance Testnet ${EXECUTION_SYMBOL} 25x 진입`,
+        reason: `${result.signal.reason}, Binance Testnet ${EXECUTION_SYMBOL} 25x 진입, 괴리 ${basisBps.toFixed(2)}bp`,
         positionPct: MARGIN_USAGE,
       });
     } else if (hasPosition && result.signal.side === "SELL") {
@@ -151,6 +156,11 @@ export async function runBinanceTestnetGagokTick(previousState) {
     }
   }
 
+  const basisReason =
+    !hasPosition && result.signal.side === "BUY" && !basisAllowed
+      ? `BTCUSDT/BTCUSDC 괴리 ${basisBps.toFixed(2)}bp가 허용치 ${MAX_BASIS_BPS}bp를 초과해 진입 보류`
+      : null;
+
   return {
     state: {
       ...result.state,
@@ -167,9 +177,15 @@ export async function runBinanceTestnetGagokTick(previousState) {
         signalSymbol: "BTCUSDT",
         executionSymbol: EXECUTION_SYMBOL,
         leverage: LEVERAGE,
+        signalPrice,
         executionPrice,
+        basisBps,
+        maxBasisBps: MAX_BASIS_BPS,
+        basisAllowed,
+        basisReason,
         orderId: order?.orderId ?? null,
         alreadyProcessed: result.alreadyProcessed,
+        reason: basisReason ? `${result.signal.reason}, ${basisReason}` : result.signal.reason,
       },
       updated_at: new Date().toISOString(),
     },

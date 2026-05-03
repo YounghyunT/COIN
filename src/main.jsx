@@ -1303,13 +1303,17 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
   );
 }
 
-function BinanceTestnetPanel({ status }) {
+function BinanceTestnetPanel({ status, botState }) {
   const account = status.status?.account;
   const positions = status.status?.positions ?? [];
   const commissions = status.status?.commissions ?? [];
   const usdcAsset = account?.assets?.find((asset) => asset.asset === "USDC");
   const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
   const btcUsdcFee = commissions.find((item) => item.symbol === "BTCUSDC");
+  const liveState = botState?.state;
+  const lastSignal = liveState?.last_signal;
+  const trades = botState?.trades ?? [];
+  const basisBps = Number(lastSignal?.basisBps);
   const feeLabel = (item) =>
     item?.ok
       ? `Maker ${(item.makerCommissionRate * 100).toFixed(4)}% / Taker ${(item.takerCommissionRate * 100).toFixed(4)}%`
@@ -1322,15 +1326,15 @@ function BinanceTestnetPanel({ status }) {
         <span>Binance Futures Testnet</span>
       </div>
       <div className={`signal-box mt-4 ${status.error ? "sell" : status.loading ? "wait" : "buy"}`}>
-        <div className="text-sm text-slate-400">테스트넷 계정 연결</div>
+        <div className="text-sm text-slate-400">BTCUSDC 자동매매 테스트넷</div>
         <div className="mt-1 text-2xl font-semibold">
-          {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : "연결됨"}
+          {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : lastSignal?.label || "연결됨"}
         </div>
         <div className="mt-3 text-sm leading-6 text-slate-300">
           {status.error
             ? status.error
           : status.status
-              ? `${status.status.mode.toUpperCase()} · BTCUSDC 25x 테스트넷 · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
+              ? `${status.status.mode.toUpperCase()} · 가곡대광v1.0 · BTCUSDC 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
               : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
         </div>
       </div>
@@ -1352,15 +1356,38 @@ function BinanceTestnetPanel({ status }) {
           tone={Number(account?.totalUnrealizedProfit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
         />
         <IndicatorCard title="BTCUSDC 수수료" value={btcUsdcFee?.ok ? `${(btcUsdcFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdcFee)} />
+        <IndicatorCard
+          title="USDT-USDC 괴리"
+          value={Number.isFinite(basisBps) ? `${basisBps >= 0 ? "+" : ""}${basisBps.toFixed(2)}bp` : "--"}
+          caption={lastSignal?.basisAllowed === false ? "허용치 초과, 진입 보류" : "허용치 5bp 이내 진입"}
+          tone={lastSignal?.basisAllowed === false ? "text-rose-400" : "text-emerald-400"}
+        />
       </div>
       <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
         {activePositions.length
           ? activePositions.map((position) => (
               <div key={`${position.symbol}-${position.positionSide}`}>
-                {position.symbol} {position.positionAmt > 0 ? "LONG" : "SHORT"} · 수량 {position.positionAmt} · 진입 ${formatUsd(position.entryPrice)}
+                {position.symbol} {position.positionAmt > 0 ? "LONG" : "SHORT"} · 수량 {position.positionAmt} · 진입 ${formatUsd(position.entryPrice)} · 청산가 ${formatUsd(position.liquidationPrice)}
               </div>
             ))
-          : "현재 테스트넷 BTC 포지션은 없습니다. 이 패널은 조회 전용이며 주문은 실행하지 않습니다."}
+          : "현재 BTCUSDC 테스트넷 포지션은 없습니다. 가곡대광 매수 신호와 괴리율 필터를 통과하면 cron 실행 시 자동 진입합니다."}
+      </div>
+      <div className="mt-4 rounded-md border border-white/10">
+        <div className="border-b border-white/10 px-4 py-3 text-sm font-semibold text-slate-200">테스트넷 체결현황</div>
+        <div className="max-h-44 overflow-auto">
+          {trades.length ? (
+            trades.slice(0, 8).map((trade) => (
+              <div className="trade-row ai-trade-row" key={trade.id}>
+                <span className={trade.side === "BUY" ? "text-emerald-400" : "text-rose-400"}>{trade.side}</span>
+                <span>{Number(trade.amount).toFixed(6)} BTC</span>
+                <span>${formatUsd(trade.price)}</span>
+                <span className="text-slate-500">{new Date(trade.created_at).toLocaleTimeString()}</span>
+              </div>
+            ))
+          ) : (
+            <div className="p-4 text-sm text-slate-500">아직 테스트넷 체결 기록이 없습니다.</div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -1522,6 +1549,7 @@ function App() {
   const [alertBotId, setAlertBotId] = useState(BOT_PROFILES[0].id);
   const botState = useBotState(selectedBotId);
   const binanceStatus = useBinanceTestnetStatus();
+  const binanceBotState = useBotState("binance-testnet-gagok-v1");
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
   const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
@@ -1701,7 +1729,7 @@ function App() {
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
           <AiBotPanel botState={botState} selectedBotId={selectedBotId} onBotChange={setSelectedBotId} />
           <div className="flex flex-col gap-4">
-            <BinanceTestnetPanel status={binanceStatus} />
+            <BinanceTestnetPanel status={binanceStatus} botState={binanceBotState} />
             <section className="panel">
               <div className="section-title">
                 <Settings2 size={18} />
