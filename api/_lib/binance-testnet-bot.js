@@ -15,7 +15,7 @@ export const BINANCE_TESTNET_BOT_ID = "binance-testnet-gagok-v1";
 const EXECUTION_SYMBOL = "BTCUSDT";
 const SIGNAL_BOT_ID = "poongdeok-xi-v1";
 const LEVERAGE = 25;
-const MARGIN_USAGE = 0.98;
+const MARGIN_USAGE = 0.9;
 const BTC_DUST = 0.00000001;
 
 function getAssetBalance(account, assetName) {

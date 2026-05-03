@@ -12,7 +12,7 @@ function positionPctFromSignal(score, side, bot) {
       bot?.strategy === "trend-pullback" ||
       bot?.strategy === "aggressive-scalp"
     ) {
-      return 0.98;
+      return 0.9;
     }
 
     if (score >= 7) return 0.7;

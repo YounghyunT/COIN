@@ -53,7 +53,7 @@ const BOT_PROFILES = [
     ruleCards: [
       ["봇 판단 기준", "1분봉 완성봉", "포지션 없음이면 매수, 포지션 보유 중이면 다음 완성봉에서 청산"],
       ["진입 방식", "강제 회전", "지표는 사유 기록용으로 남기고 체결 테스트를 우선"],
-      ["청산 설계", "다음 1분봉 전량 청산", "보유 현금의 약 98% 진입 후 다음 판단에서 전량 청산"],
+      ["청산 설계", "다음 1분봉 전량 청산", "모의투자와 테스트넷 모두 보유 현금의 약 90% 진입"],
     ],
   },
   {
@@ -1358,7 +1358,7 @@ function AiBotPanel({ botState, selectedBotId, onBotChange }) {
   const lastSignal = state?.last_signal;
   const lastRunLabel = state?.last_run_at ? new Date(state.last_run_at).toLocaleTimeString() : botState.loading ? "동기화 중" : "--";
   const isFullSizeBot = activeBot.id === "gagok-daegwang-v1" || activeBot.id === "poongdeok-xi-v1";
-  const suggestedBuyPct = lastSignal?.side === "BUY" ? (isFullSizeBot ? 98 : Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
+  const suggestedBuyPct = lastSignal?.side === "BUY" ? (isFullSizeBot ? 90 : Number(lastSignal.score ?? 0) >= 7 ? 70 : Number(lastSignal.score ?? 0) >= 5 ? 55 : 35) : null;
   const suggestedSellPct = lastSignal?.side === "SELL" ? (isFullSizeBot ? 100 : 33) : null;
   const displayBuyPct = suggestedBuyPct;
   const tradeIntervalLabel = (interval) => {
