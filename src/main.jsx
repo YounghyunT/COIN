@@ -828,6 +828,51 @@ function useBotState(botId) {
   return botState;
 }
 
+function useBinanceTestnetStatus() {
+  const [state, setState] = useState({
+    loading: true,
+    error: null,
+    status: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatus() {
+      try {
+        const response = await fetch("/api/binance-testnet/status");
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Binance 테스트넷 응답 실패");
+        if (!cancelled) {
+          setState({
+            loading: false,
+            error: null,
+            status: payload.status,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setState({
+            loading: false,
+            error: error.message,
+            status: null,
+          });
+        }
+      }
+    }
+
+    loadStatus();
+    const timer = window.setInterval(loadStatus, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return state;
+}
+
 function BinanceChart({ candles, indicators, interval, onIntervalChange, status }) {
   const chartRef = useRef(null);
   const pointersRef = useRef(new Map());
@@ -1258,6 +1303,65 @@ function TelegramPanel({ signal, lastPrice, signalTime, trend }) {
   );
 }
 
+function BinanceTestnetPanel({ status }) {
+  const account = status.status?.account;
+  const positions = status.status?.positions ?? [];
+  const commissions = status.status?.commissions ?? [];
+  const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
+  const btcUsdcFee = commissions.find((item) => item.symbol === "BTCUSDC");
+  const btcUsdtFee = commissions.find((item) => item.symbol === "BTCUSDT");
+  const feeLabel = (item) =>
+    item?.ok
+      ? `Maker ${(item.makerCommissionRate * 100).toFixed(4)}% / Taker ${(item.takerCommissionRate * 100).toFixed(4)}%`
+      : item?.error || "조회 대기";
+
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <Wallet size={18} />
+        <span>Binance Futures Testnet</span>
+      </div>
+      <div className={`signal-box mt-4 ${status.error ? "sell" : status.loading ? "wait" : "buy"}`}>
+        <div className="text-sm text-slate-400">테스트넷 계정 연결</div>
+        <div className="mt-1 text-2xl font-semibold">
+          {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : "연결됨"}
+        </div>
+        <div className="mt-3 text-sm leading-6 text-slate-300">
+          {status.error
+            ? status.error
+            : status.status
+              ? `${status.status.mode.toUpperCase()} · ${new Date(status.status.checkedAt).toLocaleTimeString()} 동기화`
+              : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <IndicatorCard
+          title="사용 가능 잔고"
+          value={account ? `$${formatUsd(account.availableBalance)}` : "--"}
+          caption="Futures available balance"
+        />
+        <IndicatorCard
+          title="미실현 손익"
+          value={account ? `$${formatUsd(account.totalUnrealizedProfit)}` : "--"}
+          caption="테스트넷 포지션 기준"
+          tone={Number(account?.totalUnrealizedProfit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+        />
+        <IndicatorCard title="BTCUSDC 수수료" value={btcUsdcFee?.ok ? `${(btcUsdcFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdcFee)} />
+        <IndicatorCard title="BTCUSDT 수수료" value={btcUsdtFee?.ok ? `${(btcUsdtFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdtFee)} />
+      </div>
+      <div className="mt-4 rounded-md bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
+        {activePositions.length
+          ? activePositions.map((position) => (
+              <div key={`${position.symbol}-${position.positionSide}`}>
+                {position.symbol} {position.positionAmt > 0 ? "LONG" : "SHORT"} · 수량 {position.positionAmt} · 진입 ${formatUsd(position.entryPrice)}
+              </div>
+            ))
+          : "현재 테스트넷 BTC 포지션은 없습니다. 이 패널은 조회 전용이며 주문은 실행하지 않습니다."}
+      </div>
+    </section>
+  );
+}
+
 function AiBotPanel({ botState, selectedBotId, onBotChange }) {
   const activeBot = BOT_PROFILES.find((bot) => bot.id === selectedBotId) ?? BOT_PROFILES[0];
   const state = botState.state;
@@ -1413,6 +1517,7 @@ function App() {
   const [selectedBotId, setSelectedBotId] = useState(BOT_PROFILES[0].id);
   const [alertBotId, setAlertBotId] = useState(BOT_PROFILES[0].id);
   const botState = useBotState(selectedBotId);
+  const binanceStatus = useBinanceTestnetStatus();
   const selectedTimeframe = TIMEFRAMES.find((item) => item.value === interval) ?? TIMEFRAMES.at(-1);
   const { candles, status } = useMarketData(interval);
   const { candles: alertCandles, status: alertStatus } = useMarketData(ALERT_INTERVAL);
@@ -1591,30 +1696,33 @@ function App() {
 
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
           <AiBotPanel botState={botState} selectedBotId={selectedBotId} onBotChange={setSelectedBotId} />
-          <section className="panel">
-            <div className="section-title">
-              <Settings2 size={18} />
-              <span>배포 체크</span>
-            </div>
-            <div className="mt-4 space-y-3 text-sm text-slate-400">
-              <div className="check-row">
-                <CheckCircle2 size={16} />
-                GitHub 저장소 연결 후 Vercel Import
+          <div className="flex flex-col gap-4">
+            <BinanceTestnetPanel status={binanceStatus} />
+            <section className="panel">
+              <div className="section-title">
+                <Settings2 size={18} />
+                <span>배포 체크</span>
               </div>
-              <div className="check-row">
-                <CheckCircle2 size={16} />
-                Build Command: <code>npm run build</code>
+              <div className="mt-4 space-y-3 text-sm text-slate-400">
+                <div className="check-row">
+                  <CheckCircle2 size={16} />
+                  GitHub 저장소 연결 후 Vercel Import
+                </div>
+                <div className="check-row">
+                  <CheckCircle2 size={16} />
+                  Build Command: <code>npm run build</code>
+                </div>
+                <div className="check-row">
+                  <CheckCircle2 size={16} />
+                  Binance 테스트넷 환경변수 4개 등록
+                </div>
+                <div className="check-row">
+                  <CheckCircle2 size={16} />
+                  텔레그램 환경변수 2개 등록
+                </div>
               </div>
-              <div className="check-row">
-                <CheckCircle2 size={16} />
-                Output Directory: <code>dist</code>
-              </div>
-              <div className="check-row">
-                <CheckCircle2 size={16} />
-                텔레그램 환경변수 2개 등록
-              </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </section>
       </div>
     </main>
