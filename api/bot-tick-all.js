@@ -111,7 +111,7 @@ export default async function handler(request, response) {
 
   try {
     const results = [];
-    for (const bot of BOTS) {
+    for (const bot of BOTS.filter((item) => item.id !== BINANCE_TESTNET_BOT_ID)) {
       results.push(await runBot(bot));
     }
     const binanceTestnet = await runBinanceTestnetBot();

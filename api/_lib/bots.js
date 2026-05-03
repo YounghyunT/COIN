@@ -15,6 +15,14 @@ export const BOTS = [
     initialCash: 50000,
     strategy: "balanced-mean-reversion",
   },
+  {
+    id: "binance-testnet-gagok-v1",
+    name: "Binance Testnet 가곡대광v1.0",
+    interval: "15m",
+    candleLimit: 240,
+    initialCash: 5000,
+    strategy: "binance-testnet-gagok",
+  },
 ];
 
 export const DEFAULT_BOT_ID = BOTS[0].id;
