@@ -1240,6 +1240,9 @@ function BinanceTestnetPanel({ status, botState }) {
   const commissions = status.status?.commissions ?? [];
   const usdtAsset = account?.assets?.find((asset) => asset.asset === "USDT");
   const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
+  const testnetHeadline = activePositions.length
+    ? `${activePositions[0].positionAmt > 0 ? "LONG 보유 중" : "SHORT 보유 중"}`
+    : "포지션 없음";
   const btcUsdtFee = commissions.find((item) => item.symbol === "BTCUSDT");
   const liveState = botState?.state;
   const lastSignal = liveState?.last_signal;
@@ -1258,13 +1261,15 @@ function BinanceTestnetPanel({ status, botState }) {
       <div className={`signal-box mt-4 ${status.error ? "sell" : status.loading ? "wait" : "buy"}`}>
         <div className="text-sm text-slate-400">BTCUSDT 자동매매 테스트넷</div>
         <div className="mt-1 text-2xl font-semibold">
-          {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : lastSignal?.label || "연결됨"}
+          {status.loading ? "연결 확인 중" : status.error ? "연결 확인 필요" : testnetHeadline}
         </div>
         <div className="mt-3 text-sm leading-6 text-slate-300">
           {status.error
             ? status.error
-          : status.status
-              ? `${status.status.mode.toUpperCase()} · 풍덕자이v1.0 · BTCUSDT 25x · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
+            : lastSignal?.error
+              ? `마지막 오류: ${lastSignal.error}`
+            : status.status
+              ? `${status.status.mode.toUpperCase()} · 풍덕자이v1.0 · BTCUSDT 25x · 마지막 신호 ${lastSignal?.label ?? "--"} · ${new Date(status.status.checkedAt).toLocaleTimeString()}`
               : "Vercel 환경변수 등록 후 배포에서 확인됩니다."}
         </div>
       </div>

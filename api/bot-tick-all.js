@@ -128,6 +128,25 @@ async function runBinanceTestnetBot() {
         : null,
     };
   } catch (error) {
+    const previousState = await getBotState(BINANCE_TESTNET_BOT_ID);
+    if (previousState) {
+      await upsertBotState(
+        {
+          ...previousState,
+          last_run_at: new Date().toISOString(),
+          last_signal: {
+            ...(previousState.last_signal ?? {}),
+            side: "ERROR",
+            label: "테스트넷 주문 오류",
+            error: error.message,
+            updatedAt: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        },
+        BINANCE_TESTNET_BOT_ID,
+      );
+    }
+
     return {
       ok: false,
       bot: {
