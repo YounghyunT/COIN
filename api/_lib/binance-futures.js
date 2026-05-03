@@ -131,13 +131,65 @@ function compactCommission(symbol, result) {
   };
 }
 
+function getKstTodayRange(now = new Date()) {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const shifted = new Date(now.getTime() + KST_OFFSET_MS);
+  const startUtcMs =
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - KST_OFFSET_MS;
+
+  return {
+    startTime: startUtcMs,
+    endTime: now.getTime(),
+    timezone: "Asia/Seoul",
+  };
+}
+
+function sumIncomeRows(rows) {
+  return Array.isArray(rows)
+    ? rows.reduce((sum, row) => sum + Number(row.income ?? 0), 0)
+    : 0;
+}
+
+function compactIncomeSummary(results, range) {
+  const [realizedResult, commissionResult, fundingResult] = results;
+  const realizedPnl = realizedResult.ok ? sumIncomeRows(realizedResult.data) : 0;
+  const commission = commissionResult.ok ? sumIncomeRows(commissionResult.data) : 0;
+  const fundingFee = fundingResult.ok ? sumIncomeRows(fundingResult.data) : 0;
+
+  return {
+    ...range,
+    realizedPnl,
+    commission,
+    fundingFee,
+    netPnl: realizedPnl + commission + fundingFee,
+    errors: [
+      realizedResult.ok ? null : `REALIZED_PNL: ${realizedResult.error}`,
+      commissionResult.ok ? null : `COMMISSION: ${commissionResult.error}`,
+      fundingResult.ok ? null : `FUNDING_FEE: ${fundingResult.error}`,
+    ].filter(Boolean),
+  };
+}
+
 export async function getBinanceTestnetStatus(symbols = DEFAULT_SYMBOLS) {
   const config = getBinanceConfig();
-  const [time, account, positionResults, commissionResults] = await Promise.all([
+  const incomeRange = getKstTodayRange();
+  const primarySymbol = symbols[0] || DEFAULT_SYMBOLS[0];
+  const incomeParams = {
+    symbol: primarySymbol,
+    startTime: incomeRange.startTime,
+    endTime: incomeRange.endTime,
+    limit: 1000,
+  };
+  const [time, account, positionResults, commissionResults, incomeResults] = await Promise.all([
     binanceRequest("/fapi/v1/time", config),
     binanceRequest("/fapi/v2/account", { ...config, signed: true }),
     Promise.all(symbols.map((symbol) => optionalSignedRequest("/fapi/v2/positionRisk", { ...config, params: { symbol } }))),
     Promise.all(symbols.map((symbol) => optionalSignedRequest("/fapi/v1/commissionRate", { ...config, params: { symbol } }))),
+    Promise.all([
+      optionalSignedRequest("/fapi/v1/income", { ...config, params: { ...incomeParams, incomeType: "REALIZED_PNL" } }),
+      optionalSignedRequest("/fapi/v1/income", { ...config, params: { ...incomeParams, incomeType: "COMMISSION" } }),
+      optionalSignedRequest("/fapi/v1/income", { ...config, params: { ...incomeParams, incomeType: "FUNDING_FEE" } }),
+    ]),
   ]);
 
   return {
@@ -151,6 +203,7 @@ export async function getBinanceTestnetStatus(symbols = DEFAULT_SYMBOLS) {
       return rows.map(compactPosition);
     }),
     commissions: symbols.map((symbol, index) => compactCommission(symbol, commissionResults[index])),
+    todayIncome: compactIncomeSummary(incomeResults, incomeRange),
     checkedAt: new Date().toISOString(),
   };
 }

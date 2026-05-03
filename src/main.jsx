@@ -1238,6 +1238,7 @@ function BinanceTestnetPanel({ status, botState }) {
   const account = status.status?.account;
   const positions = status.status?.positions ?? [];
   const commissions = status.status?.commissions ?? [];
+  const todayIncome = status.status?.todayIncome;
   const usdtAsset = account?.assets?.find((asset) => asset.asset === "USDT");
   const activePositions = positions.filter((position) => Math.abs(Number(position.positionAmt ?? 0)) > 0);
   const testnetHeadline = activePositions.length
@@ -1296,6 +1297,24 @@ function BinanceTestnetPanel({ status, botState }) {
           value={account ? `$${formatUsd(account.totalUnrealizedProfit)}` : "--"}
           caption="테스트넷 포지션 기준"
           tone={Number(account?.totalUnrealizedProfit ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+        />
+        <IndicatorCard
+          title="오늘 실현손익"
+          value={todayIncome ? `$${formatUsd(todayIncome.realizedPnl)}` : "--"}
+          caption="KST 00:00 이후 청산 손익"
+          tone={Number(todayIncome?.realizedPnl ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+        />
+        <IndicatorCard
+          title="오늘 수수료"
+          value={todayIncome ? `$${formatUsd(todayIncome.commission)}` : "--"}
+          caption="Binance COMMISSION 합산"
+          tone={Number(todayIncome?.commission ?? 0) <= 0 ? "text-rose-400" : "text-emerald-400"}
+        />
+        <IndicatorCard
+          title="오늘 펀딩비"
+          value={todayIncome ? `$${formatUsd(todayIncome.fundingFee)}` : "--"}
+          caption="Binance FUNDING_FEE 합산"
+          tone={Number(todayIncome?.fundingFee ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
         />
         <IndicatorCard title="BTCUSDT 수수료" value={btcUsdtFee?.ok ? `${(btcUsdtFee.takerCommissionRate * 100).toFixed(4)}%` : "--"} caption={feeLabel(btcUsdtFee)} />
         <IndicatorCard
