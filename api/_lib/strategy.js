@@ -454,19 +454,22 @@ function buildPoongdeokAggressiveSignal({ alertCandles, dailyCandles, fearGreed,
     sellReasons.push("보유 포지션 없음");
   }
 
-  if (entryPrice && sellScore >= 3) {
-    return { side: "SELL", label: "1분 공격 매도", score: sellScore, reason: sellReasons.join(", ") };
-  }
-
-  if (!entryPrice && buyScore >= 2) {
-    return { side: "BUY", label: "1분 초공격 매수", score: buyScore, reason: buyReasons.join(", ") };
-  }
-
   if (entryPrice) {
-    return { side: "WAIT", label: "1분 공격 보유", score: Math.max(buyScore, sellScore), reason: sellReasons.join(", ") };
+    const rotationReason = pnl !== null ? `1분 강제 회전 청산, 현재 수익률 ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "1분 강제 회전 청산";
+    return {
+      side: "SELL",
+      label: "1분 강제 매도",
+      score: Math.max(sellScore, 9),
+      reason: [rotationReason, ...sellReasons].filter(Boolean).join(", "),
+    };
   }
 
-  return { side: "WAIT", label: buyScore >= 1 ? "1분 초공격 관찰" : "1분 공격 대기", score: buyScore, reason: buyReasons.join(", ") };
+  return {
+    side: "BUY",
+    label: "1분 강제 매수",
+    score: Math.max(buyScore, 9),
+    reason: ["포지션 없음: 1분 강제 회전 진입", ...buyReasons].filter(Boolean).join(", "),
+  };
 }
 
 function buildStrategySignal(args) {
